@@ -461,41 +461,44 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
 </style>
 
 
-<style id="v22-print-styles">
-/* === v22 Print Styles === */
-/* في وضع العرض العادي: نُخفي حاوي الطباعة */
+<style id="v23-print-styles">
+/* ======================================================== */
+/* === v23 Print Styles — A4 Landscape بعرض الشاشة الأصلي === */
+/* ======================================================== */
 #app-print-container { display: none; }
 
 @page {
-  size: A4 portrait;
-  margin: 12mm 10mm;
+  size: A4 landscape;       /* 297mm × 210mm */
+  margin: 8mm 10mm;
 }
 
 @media print {
-  /* الجسم */
   html, body {
     background: #ffffff !important;
     color: #1f2937 !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: auto !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  /* إخفاء كل شيء عدا حاوي الطباعة */
   body > *:not(#app-print-container) {
     display: none !important;
     visibility: hidden !important;
   }
-  /* إظهار حاوي الطباعة */
   #app-print-container {
     display: block !important;
     visibility: visible !important;
     position: static !important;
-    width: 100% !important;
-    max-width: none !important;
-    margin: 0 !important;
+    width: 277mm !important;       /* A4 landscape minus margins */
+    max-width: 277mm !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     background: #ffffff !important;
+    color: #1f2937 !important;
+    font-family: 'Segoe UI', Tahoma, 'Almarai', Arial, sans-serif !important;
+    font-size: 11px !important;
+    line-height: 1.4 !important;
   }
   #app-print-container, #app-print-container * {
     visibility: visible !important;
@@ -505,64 +508,87 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   /* فواصل الصفحات */
   #app-print-container .print-section {
     page-break-after: always;
-    page-break-inside: avoid;
-    padding: 0;
-    margin: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
   }
   #app-print-container .print-section:last-child {
     page-break-after: auto;
   }
-  /* رأس الصفحة */
+  /* رأس الصفحة الاحترافي */
   #app-print-container .print-page-header {
     text-align: center;
-    padding: 0 0 10mm 0;
+    padding: 6mm 4mm 6mm 4mm;
     margin-bottom: 6mm;
     border-bottom: 3px solid #5b50d6;
+    background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
   }
   #app-print-container .pph-brand {
-    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
-    font-size: 11px;
-    color: #64748b;
-    letter-spacing: 1px;
+    font-size: 10px !important;
+    color: #5b50d6 !important;
+    letter-spacing: 2px;
     margin-bottom: 4px;
+    font-weight: 700;
     text-transform: uppercase;
   }
   #app-print-container .pph-title {
-    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
-    font-size: 22px;
-    font-weight: 800;
-    color: #0f172a;
+    font-size: 22px !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
     margin-bottom: 4px;
   }
   #app-print-container .pph-meta {
-    font-size: 11px;
-    color: #64748b;
+    font-size: 10px !important;
+    color: #64748b !important;
   }
   /* تذييل الصفحة */
   #app-print-container .print-page-footer {
-    margin-top: 8mm;
-    padding-top: 4mm;
-    border-top: 1px dashed #cbd5e1;
+    position: fixed;
+    bottom: 4mm;
+    left: 10mm;
+    right: 10mm;
     text-align: center;
-    font-size: 10px;
-    color: #94a3b8;
+    font-size: 9px !important;
+    color: #94a3b8 !important;
+    padding-top: 3mm;
+    border-top: 1px dashed #cbd5e1;
   }
-  /* إعادة ضبط الألوان للوضع الفاتح */
-  #app-print-container [class*="text"],
-  #app-print-container [class*="tx"] {
-    color: #1f2937 !important;
+  /* المحتوى المنسوخ يأخذ كامل العرض */
+  #app-print-container .print-section > *:not(.print-page-header):not(.print-page-footer) {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 0 6mm 0 !important;
+    background: transparent !important;
+    box-sizing: border-box !important;
   }
-  #app-print-container [style*="color:#fff"],
-  #app-print-container [style*="color:white"],
-  #app-print-container [style*="color: white"] {
-    color: #0f172a !important;
+  /* البطاقات (cards/tiles) */
+  #app-print-container [class*="tile"],
+  #app-print-container [class*="stat-card"],
+  #app-print-container [class*="card-pad"],
+  #app-print-container [style*="border-radius"][style*="padding"] {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    padding: 8px !important;
+    page-break-inside: avoid !important;
+    box-shadow: none !important;
+  }
+  /* الشبكات (grids): الحفاظ على التخطيط الأفقي */
+  #app-print-container [style*="grid"],
+  #app-print-container [style*="grid-template"] {
+    display: grid !important;
   }
   /* الجداول */
   #app-print-container table {
     width: 100% !important;
+    max-width: 100% !important;
     border-collapse: collapse !important;
     page-break-inside: auto !important;
-    font-size: 11px !important;
+    font-size: 10px !important;
+    margin: 4px 0 !important;
+    table-layout: auto;
   }
   #app-print-container tr {
     page-break-inside: avoid !important;
@@ -574,20 +600,20 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   #app-print-container th {
     background: #5b50d6 !important;
     color: #ffffff !important;
-    padding: 8px 10px !important;
+    padding: 6px 8px !important;
     text-align: right !important;
     font-weight: 700 !important;
     border: 1px solid #4338ca !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+    font-size: 10px !important;
   }
   #app-print-container td {
     border: 1px solid #cbd5e1 !important;
-    padding: 6px 9px !important;
+    padding: 5px 7px !important;
     text-align: right !important;
     vertical-align: top !important;
     background: #ffffff !important;
     color: #1f2937 !important;
+    font-size: 10px !important;
   }
   #app-print-container tr:nth-child(even) td {
     background: #f8fafc !important;
@@ -595,20 +621,23 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   /* الـ canvas للرسوم البيانية */
   #app-print-container canvas {
     max-width: 100% !important;
+    width: auto !important;
     height: auto !important;
     display: block !important;
-    margin: 8px auto !important;
+    margin: 4px auto !important;
   }
-  /* البطاقات (cards) */
-  #app-print-container [class*="card"],
-  #app-print-container [class*="tile"],
-  #app-print-container [class*="stat"] {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    padding: 10px !important;
-    page-break-inside: avoid !important;
+  /* النصوص: تأكيد الألوان الفاتحة */
+  #app-print-container,
+  #app-print-container *:not(th):not(canvas):not(svg) {
+    color: #1f2937 !important;
+    background-color: transparent !important;
+    text-shadow: none !important;
   }
-  /* إخفاء عناصر تفاعلية لا تُطبع */
+  #app-print-container [class*="text"],
+  #app-print-container [class*="title"] {
+    color: #0f172a !important;
+  }
+  /* إخفاء العناصر التفاعلية */
   #app-print-container button,
   #app-print-container .btn,
   #app-print-container .btn-mini,
@@ -617,8 +646,9 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   #app-print-container .btn-danger,
   #app-print-container .btn-mail,
   #app-print-container .btn-wa,
-  #app-print-container input[type="button"],
-  #app-print-container input[type="submit"],
+  #app-print-container input,
+  #app-print-container select,
+  #app-print-container textarea,
   #app-print-container .hdr,
   #app-print-container header,
   #app-print-container #tania-sidebar,
@@ -637,7 +667,7 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   #app-print-container [data-no-print] {
     display: none !important;
   }
-  /* الروابط: إخفاء الـ URL تحت النص */
+  /* الروابط */
   #app-print-container a {
     color: inherit !important;
     text-decoration: none !important;
@@ -649,6 +679,13 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   #app-print-container svg {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    max-width: 100% !important;
+  }
+  /* فيلتر التواريخ والرسومات المعقدة على صفحة Tasks */
+  #app-print-container [id*="filter"],
+  #app-print-container .filter-row,
+  #app-print-container .filters {
+    display: none !important;
   }
 }
 </style>
