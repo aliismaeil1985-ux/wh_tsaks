@@ -6062,14 +6062,24 @@ if(sendEmail._sending){
   }
 }
 
-/* تحقق من تحميل مكتبة EmailJS من CDN */
+/* تحقق من تحميل مكتبة EmailJS من CDN — يظهر فقط للأدمن في التلقائي */
 if(typeof emailjs === 'undefined' || !emailjs || typeof emailjs.send !== 'function'){
-  notif("❌ مكتبة EmailJS لم تُحمَّل — تحقق من الإنترنت ثم أعد تحميل الصفحة","err");
+  if(_isManual || _isAdminUser){
+    notif("❌ مكتبة EmailJS لم تُحمَّل — تحقق من الإنترنت ثم أعد تحميل الصفحة","err");
+  }
   return;
 }
 
-if(!CFG.pubkey||!CFG.svc||!CFG.tpl){
-notif("⚙️ إعدادات EmailJS ناقصة (Public Key / Service ID / Template ID)","err");
+/* تحديد الحقل الناقص بدقة */
+if(!CFG.pubkey || !CFG.svc || !CFG.tpl){
+var _missing = [];
+if(!CFG.pubkey) _missing.push('Public Key');
+if(!CFG.svc) _missing.push('Service ID');
+if(!CFG.tpl) _missing.push('Template ID');
+/* في الإرسال التلقائي: لا نزعج غير الأدمن */
+if(_isManual || _isAdminUser){
+notif("⚙️ إعدادات EmailJS ناقصة: " + _missing.join(' و ') + " — افتح الإعدادات ⚙️ لإكمالها","err");
+}
 return;
 }
 const isMgr=(CU?.role==="manager"||CU?.role==="admin");
@@ -6089,7 +6099,9 @@ assignIds = _existing ? _existing.assignedTo : [CU?.id];
 }
 const assignedUsers = assignIds.map(id => DB.users.find(u => u.id === id)).filter(u => u && u.email && !u.emailDisabled && !u.frozen);
 if(assignedUsers.length === 0){
+if(_isManual || _isAdminUser){
 notif("⚠️ لا يوجد مكلَّفون ببريد إلكتروني (أو تم إيقاف الإرسال لهم)","err");
+}
 return;
 }
 sendEmail._sending = true;
@@ -6157,7 +6169,9 @@ const _emailTimeout = new Promise(function(_, reject){
   setTimeout(function(){ reject(new Error('انتهت مهلة الإرسال (30 ثانية)')); }, 30000);
 });
 await Promise.race([emailjs.send(CFG.svc, CFG.tpl, emailParams), _emailTimeout]);
+if(_isManual || _isAdminUser){
 notif("✉️ تم الإرسال بنجاح للمكلَّف" + (_ccEmail ? " ونسخة للمدير" : ""));
+}
 }catch(e){
 console.error("EmailJS Error:", e);
 const _errText = e.text || e.message || "";
@@ -6175,7 +6189,12 @@ _errMsg = "❌ Service ID غير صحيح أو الخدمة معطّلة في Em
 } else if(_errText.includes('مهلة')){
 _errMsg = "❌ " + _errText + " — تحقق من الاتصال بالإنترنت";
 }
+/* في الإرسال التلقائي: لا نزعج غير الأدمن بأخطاء الإعدادات */
+if(_isManual || _isAdminUser){
 notif(_errMsg, "err");
+} else {
+console.warn('[sendEmail][auto] silent fail for non-admin:', _errMsg);
+}
 } finally {
 sendEmail._sending = false;
 sendEmail._sendingAt = 0;
@@ -6884,7 +6903,17 @@ btn.style.cssText='flex:1;padding:9px;border-radius:9px;font-size:13px;font-weig
 if(tab==='fb') updateFBStatus();
 }
 function saveCFG(){
-CFG={pubkey:$('cfg-pubkey').value.trim(),svc:$('cfg-svc').value.trim(),tpl:$('cfg-tpl').value.trim(),phone:$('cfg-phone').value.trim(),wakey:$('cfg-wakey').value.trim(),company:$('cfg-company').value.trim()||'منصة المهام',testEmail:$('cfg-test-em').value.trim(),fromEmail:'aliismaeil2026@outlook.sa'};
+/* v19: نحافظ على الحقول الموجودة سابقاً (emailAutoDisabled, waAutoDisabled, الخ) */
+CFG = Object.assign({}, CFG, {
+  pubkey:$('cfg-pubkey').value.trim(),
+  svc:$('cfg-svc').value.trim(),
+  tpl:$('cfg-tpl').value.trim(),
+  phone:$('cfg-phone').value.trim(),
+  wakey:$('cfg-wakey').value.trim(),
+  company:$('cfg-company').value.trim()||'منصة المهام',
+  testEmail:$('cfg-test-em').value.trim(),
+  fromEmail: CFG.fromEmail || 'aliismaeil2026@outlook.sa'
+});
 saveCFGStore();$('cfg-saved').style.display='block';notif('✅ تم حفظ الإعدادات');
 }
 async function testEmail(){
