@@ -676,52 +676,39 @@ const USERS=[
 {id:4,name:'محمود كمال',ename:'MK',email:'myounes@tania.sa',role:'employee',phone:'966592077566',avatar:'MK',department:'الإدارة',title:'مشرف'},
 {id:5,name:'شاه جيهان',ename:'SJ',email:'mshajahan@tania.sa',role:'employee',phone:'966572487615',avatar:'SJ',department:'الإدارة',title:'مشرف'},
 ];
-let DB={users:[...USERS],tasks:(function(){
-function T(id,title,status,priority,uids,deadline,progress,compDate,startDate,desc){
-return {id,serial:'AD',title,description:desc||'',priority:priority||'medium',
-status,assignedTo:uids,createdBy:1,deadline,progress:progress||0,
-startDate:startDate||'2026-04-20',notes:'',
-completionDate:compDate||null,attachments:[],createdAt:'2026-04-20'};
+/* تم حذف المهام والملاحظات التجريبية (الوهمية) — تبدأ القاعدة فارغة */
+let DB={users:[...USERS],tasks:[],notes:[]};
+
+/* ====== تنظيف المهام/الملاحظات الوهمية من نسخ سابقة (يعمل مرة واحدة فقط) ====== */
+function _isDemoTask(t){
+  if(!t || !t.title) return false;
+  var title = String(t.title).trim();
+  // الأنماط الوهمية المعروفة من النسخة القديمة
+  if(/^مهمة\s+(جارية|انتظار)\s*\d+$/.test(title)) return true;
+  if(title==='مراجعة التقارير الشهرية' && t.id===1) return true;
+  if(title==='إعداد خطة العمل' && t.id===2) return true;
+  return false;
 }
-return [
-T(1,'مراجعة التقارير الشهرية','completed','medium',[2],'2026-04-30',100,'2026-05-04'),
-T(2,'إعداد خطة العمل','completed','medium',[2],'2026-04-30',100,'2026-05-04'),
-T(3,'مهمة جارية 1','in_progress','medium',[2],'2026-04-30',50),
-T(4,'مهمة جارية 2','in_progress','high',[3],'2026-04-30',60),
-T(5,'مهمة جارية 3','in_progress','medium',[2],'2026-04-30',50),
-T(6,'مهمة جارية 4','in_progress','low',[4],'2026-04-30',40),
-T(7,'مهمة جارية 5','in_progress','medium',[3],'2026-04-30',50),
-T(8,'مهمة جارية 6','in_progress','medium',[2],'2026-04-30',50),
-T(9,'مهمة جارية 7','in_progress','medium',[5],'2026-04-30',50),
-T(10,'مهمة جارية 8','in_progress','high',[4],'2026-04-30',50),
-T(11,'مهمة جارية 9','in_progress','medium',[2],'2026-05-15',50),
-T(12,'مهمة جارية 10','in_progress','medium',[3],'2026-05-15',50),
-T(13,'مهمة انتظار 1','pending','medium',[2],'2026-04-30',0),
-T(14,'مهمة انتظار 2','pending','medium',[3],'2026-04-30',0),
-T(15,'مهمة انتظار 3','pending','low',[4],'2026-04-30',0),
-T(16,'مهمة انتظار 4','pending','high',[5],'2026-04-30',0),
-T(17,'مهمة انتظار 5','pending','medium',[2],'2026-04-30',0),
-T(18,'مهمة انتظار 6','pending','medium',[3],'2026-04-30',0),
-T(19,'مهمة انتظار 7','pending','medium',[4],'2026-04-30',0),
-T(20,'مهمة انتظار 8','pending','medium',[2],'2026-04-30',0),
-T(21,'مهمة انتظار 9','pending','medium',[5],'2026-05-15',0),
-T(22,'مهمة انتظار 10','pending','medium',[3],'2026-05-15',0),
-T(23,'مهمة انتظار 11','pending','medium',[2],'2026-05-15',0),
-T(24,'مهمة انتظار 12','pending','medium',[4],'2026-05-15',0),
-T(25,'مهمة انتظار 13','pending','medium',[3],'2026-05-15',0),
-T(26,'مهمة انتظار 14','pending','medium',[5],'2026-05-15',0),
-];
-})(),notes:[
-{id:1,subject:'متابعة التقرير',details:'يرجى الإرسال قبل نهاية الأسبوع',personId:2,date:'2026-04-20',status:'inprogress'},
-{id:2,subject:'اجتماع أسبوعي',details:'كل إثنين 10 صباحاً',personId:3,date:'2026-04-21',status:'open'},
-]};
+function _isDemoNote(n){
+  if(!n) return false;
+  if(n.id===1 && n.subject==='متابعة التقرير') return true;
+  if(n.id===2 && n.subject==='اجتماع أسبوعي') return true;
+  return false;
+}
+
 try{
 const s=localStorage.getItem('mDB');
 if(s){
 const p=JSON.parse(s);
-if(Array.isArray(p.tasks)) DB.tasks=p.tasks.map(t=>{const a=t.assignedTo;const assignedTo=Array.isArray(a)?a:(a?[Number(a)]:[1]);let serial=t.serial||null;if(serial&&/^[A-Z]{2}-\d+$/.test(serial))serial=serial.split('-')[0];return {...t,serial,assignedTo,progress:Number(t.progress)||0,attachments:Array.isArray(t.attachments)?t.attachments:[],perUserStatus:t.perUserStatus||{},perUserCompletion:t.perUserCompletion||{}};});
-if(Array.isArray(p.notes)) DB.notes=p.notes.map(n=>({...n,files:Array.isArray(n.files)?n.files:[]}));
+if(Array.isArray(p.tasks)) DB.tasks=p.tasks
+  .filter(t=>!_isDemoTask(t))
+  .map(t=>{const a=t.assignedTo;const assignedTo=Array.isArray(a)?a:(a?[Number(a)]:[1]);let serial=t.serial||null;if(serial&&/^[A-Z]{2}-\d+$/.test(serial))serial=serial.split('-')[0];return {...t,serial,assignedTo,progress:Number(t.progress)||0,attachments:Array.isArray(t.attachments)?t.attachments:[],perUserStatus:t.perUserStatus||{},perUserCompletion:t.perUserCompletion||{}};});
+if(Array.isArray(p.notes)) DB.notes=p.notes
+  .filter(n=>!_isDemoNote(n))
+  .map(n=>({...n,files:Array.isArray(n.files)?n.files:[]}));
 if(p.users){const ex=p.users.filter(u=>!USERS.find(o=>o.id===u.id));if(ex.length)DB.users=[...USERS,...ex];}
+/* احفظ النسخة المنظفة فوراً حتى لا تعود الوهمية مع المزامنة */
+try{ localStorage.setItem('mDB', JSON.stringify({tasks:DB.tasks, notes:DB.notes, users:DB.users})); }catch(_e){}
 }
 }catch(e){console.warn('DB load:',e);}
 DB.users=[...USERS,...DB.users.filter(u=>!USERS.find(o=>o.id===u.id))];
@@ -729,8 +716,8 @@ window.addEventListener('storage', function(e){
 if(e.key === 'mDB' && e.newValue){
 try{
 const p = JSON.parse(e.newValue);
-if(Array.isArray(p.tasks)) DB.tasks = p.tasks.map(t=>{const a=t.assignedTo;const assignedTo=Array.isArray(a)?a:(a?[Number(a)]:[1]);return {...t,serial:t.serial||null,assignedTo,progress:Number(t.progress)||0,attachments:Array.isArray(t.attachments)?t.attachments:[],perUserStatus:t.perUserStatus||{},perUserCompletion:t.perUserCompletion||{}};});
-if(Array.isArray(p.notes)) DB.notes = p.notes.map(n=>({...n,files:Array.isArray(n.files)?n.files:[]}));
+if(Array.isArray(p.tasks)) DB.tasks = p.tasks.filter(t=>!_isDemoTask(t)).map(t=>{const a=t.assignedTo;const assignedTo=Array.isArray(a)?a:(a?[Number(a)]:[1]);return {...t,serial:t.serial||null,assignedTo,progress:Number(t.progress)||0,attachments:Array.isArray(t.attachments)?t.attachments:[],perUserStatus:t.perUserStatus||{},perUserCompletion:t.perUserCompletion||{}};});
+if(Array.isArray(p.notes)) DB.notes = p.notes.filter(n=>!_isDemoNote(n)).map(n=>({...n,files:Array.isArray(n.files)?n.files:[]}));
 if(p.users){const ex=p.users.filter(u=>!USERS.find(o=>o.id===u.id));DB.users=[...USERS,...ex];}
 if(typeof CU !== 'undefined' && CU){
 if(CU.role==='manager'||CU.role==='admin'){
@@ -1081,8 +1068,8 @@ function startSync(){
       }
       try{
         const data = snap.data() || {};
-        const remoteTasks = (Array.isArray(data.tasks) ? data.tasks : []).map(_normalizeTask);
-        const remoteNotes = (Array.isArray(data.notes) ? data.notes : []).map(_normalizeNote);
+        const remoteTasks = (Array.isArray(data.tasks) ? data.tasks : []).filter(function(t){ return !_isDemoTask(t); }).map(_normalizeTask);
+        const remoteNotes = (Array.isArray(data.notes) ? data.notes : []).filter(function(n){ return !_isDemoNote(n); }).map(_normalizeNote);
         const remoteUsers = Array.isArray(data.users) ? data.users : [];
         const remoteDelT = Array.isArray(data.del_tasks) ? data.del_tasks : [];
         const remoteDelN = Array.isArray(data.del_notes) ? data.del_notes : [];
