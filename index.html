@@ -5713,10 +5713,23 @@ const allEmails = assignedUsers.map(u => u.email).join(",");
 const allNames = assignedUsers.map(u => u.name).join("، ");
 const senderName = CU?.name || CFG.company || "تانيا";
 const senderEmail = CU?.email || "";
+/* v18: CC dynamically — managers who are NOT in assignees (admin has no CC) */
+const _ccSet = new Set();
+const _hasNonAdminAssignee = assignedUsers.some(function(u){ return u && u.role !== 'admin'; });
+if(_hasNonAdminAssignee){
+DB.users.forEach(function(u){
+if(u && u.role === 'manager' && !u.frozen && !u.emailDisabled && u.email){
+if(!assignIds.includes(u.id)){
+_ccSet.add(u.email);
+}
+}
+});
+}
+const _ccEmail = Array.from(_ccSet).join(',');
 const emailParams = {
 to_email: allEmails,
 to_name: allNames,
-cc_email: "sayedhefny@tania.sa",
+cc_email: _ccEmail,
 reply_to: senderEmail,
 from_name: senderName,
 subject: subject,
@@ -5730,7 +5743,7 @@ task_notes: fullNotes,
 sender_name: senderName
 };
 await emailjs.send(CFG.svc, CFG.tpl, emailParams);
-notif("✉️ تم الإرسال بنجاح للمكلفين ونسخة للمديرين");
+notif("✉️ تم الإرسال بنجاح للمكلَّف" + (_ccEmail ? " ونسخة للمدير" : ""));
 }catch(e){
 console.error("EmailJS Error:", e);
 const _errText = e.text || e.message || "";
