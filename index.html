@@ -2934,6 +2934,142 @@ await db_fire.collection('login_audit').add(entry);
 }catch(e){ try{ console.warn('login_audit:', e&&e.message||e); }catch(_e){} }
 }
 
+/* === v21: نظام طباعة بصري — يلتقط لقطة فعلية للشاشة === */
+function _printLoadH2C(){
+return new Promise(function(resolve, reject){
+if(typeof window.html2canvas !== 'undefined'){ resolve(); return; }
+var s = document.createElement('script');
+s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+s.crossOrigin = 'anonymous';
+s.onload = function(){ resolve(); };
+s.onerror = function(){ reject(new Error('فشل تحميل مكتبة html2canvas — تحقق من الاتصال بالإنترنت')); };
+document.head.appendChild(s);
+});
+}
+function _printDetectActivePage(){
+/* اكتشف الصفحة النشطة + دوال التبويب المناسبة */
+var pg_mgr = document.getElementById('pg-mgr');
+var pg_emp = document.getElementById('pg-emp');
+var pg_admin = document.getElementById('pg-admin');
+function visible(el){ return el && el.style.display !== 'none' && el.offsetParent !== null; }
+if(visible(pg_mgr)){
+return { pageId:'pg-mgr', tabFn: window.mgrTab, dashTab:'ov', tasksTab:'tasks', dashId:'mgr-ov', tasksId:'mgr-tasks' };
+}
+if(visible(pg_emp)){
+return { pageId:'pg-emp', tabFn: window.empTab, dashTab:'dashboard', tasksTab:'my', dashId:'emp-dashboard', tasksId:'emp-my' };
+}
+if(visible(pg_admin)){
+/* الأدمن: لا توجد تبويبات Dashboard/Tasks بنفس البنية */
+return { pageId:'pg-admin', tabFn: null, dashTab:null, tasksTab:null, dashId:'pg-admin', tasksId:null };
+}
+return null;
+}
+async function _printCapture(el){
+if(!el) return null;
+try{
+var canvas = await window.html2canvas(el, {
+scale: window.devicePixelRatio > 1 ? 2 : 1.4,
+backgroundColor: '#ffffff',
+useCORS: true,
+allowTaint: true,
+logging: false,
+windowWidth: document.documentElement.scrollWidth,
+windowHeight: document.documentElement.scrollHeight,
+scrollX: 0,
+scrollY: -window.scrollY
+});
+return canvas.toDataURL('image/png');
+}catch(e){
+console.error('html2canvas error:', e);
+return null;
+}
+}
+async function printApp(){
+var notifLocal = function(msg, type){ try{ if(typeof notif==='function') notif(msg, type||'info'); }catch(_e){} };
+try{
+notifLocal('🔄 جارٍ تحميل مكتبة الطباعة...', 'info');
+await _printLoadH2C();
+var ctx = _printDetectActivePage();
+if(!ctx){
+alert('لم أتمكّن من تحديد الصفحة النشطة. تأكّد من تسجيل الدخول.');
+return;
+}
+notifLocal('📸 جارٍ التقاط لوحة البيانات...', 'info');
+var dashImg = null, tasksImg = null;
+if(ctx.tabFn && ctx.dashTab){
+/* صفحة manager أو employee — لها تبويبات */
+ctx.tabFn(ctx.dashTab);
+await new Promise(function(r){ setTimeout(r, 1200); });
+var dashEl = document.getElementById(ctx.dashId);
+dashImg = await _printCapture(dashEl);
+notifLocal('📸 جارٍ التقاط جدول المهام...', 'info');
+ctx.tabFn(ctx.tasksTab);
+await new Promise(function(r){ setTimeout(r, 900); });
+var tasksEl = document.getElementById(ctx.tasksId);
+tasksImg = await _printCapture(tasksEl);
+/* العودة إلى لوحة البيانات */
+ctx.tabFn(ctx.dashTab);
+} else {
+/* صفحة admin — التقط الصفحة كاملة كصورة وحيدة */
+var adminEl = document.getElementById(ctx.dashId);
+dashImg = await _printCapture(adminEl);
+tasksImg = null;
+}
+if(!dashImg && !tasksImg){
+alert('فشل التقاط لقطة الشاشة. حاول مجدداً أو استخدم Ctrl+P من المتصفح.');
+return;
+}
+var dateStr = new Date().toLocaleString('ar-SA');
+var userInfo = (window.CU && CU.name ? CU.name : '-') + (window.CU && CU.role ? ' ('+ (CU.role==='admin'?'أدمن':CU.role==='manager'?'مدير':'موظف') +')' : '');
+var w = window.open('', '_blank', 'width=1000,height=750');
+if(!w){
+alert('السماح بالنوافذ المنبثقة مطلوب للطباعة');
+return;
+}
+var pages = [];
+if(dashImg) pages.push({title:'📊 لوحة البيانات', img: dashImg, n: 1});
+if(tasksImg) pages.push({title:'📋 قائمة المهام', img: tasksImg, n: 2});
+var totalN = pages.length;
+var pagesHtml = pages.map(function(p, i){
+return '<div class="pg">'
++ '<div class="ph">'
++ '<div class="ph-title">'+ p.title +' &mdash; منصة تانيا</div>'
++ '<div class="ph-sub">'+ dateStr +' &mdash; '+ userInfo +'</div>'
++ '</div>'
++ '<div class="img-wrap"><img src="'+ p.img +'" alt="screenshot"></div>'
++ '<div class="ft">صفحة '+ p.n +' من '+ totalN +'</div>'
++ '</div>';
+}).join('');
+var html = '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>تقرير منصة تانيا</title>'
++ '<style>'
++ '@page{size:A4 portrait;margin:8mm 6mm}'
++ '*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
++ 'body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;direction:rtl;text-align:right;margin:0;padding:0;background:#fff;color:#0f172a}'
++ '.pg{page-break-after:always;padding:6mm 0;display:flex;flex-direction:column;min-height:280mm}'
++ '.pg:last-child{page-break-after:auto}'
++ '.ph{text-align:center;padding:6mm 8mm 4mm;border-bottom:2px solid #5b50d6;margin-bottom:4mm}'
++ '.ph-title{font-size:18px;font-weight:800;color:#0f172a}'
++ '.ph-sub{font-size:11px;color:#64748b;margin-top:3px}'
++ '.img-wrap{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:0 4mm}'
++ '.img-wrap img{max-width:100%;height:auto;border:1px solid #e2e8f0;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
++ '.ft{text-align:center;font-size:10px;color:#94a3b8;padding-top:3mm;border-top:1px dashed #cbd5e1;margin:4mm 8mm 0}'
++ '@media print{.ph{break-inside:avoid}.img-wrap{break-inside:avoid}}'
++ '</style></head><body>'
++ pagesHtml
++ '<scr'+'ipt>window.addEventListener("load",function(){setTimeout(function(){try{window.print();}catch(e){}},500);});</scr'+'ipt>'
++ '</body></html>';
+w.document.open();
+w.document.write(html);
+w.document.close();
+notifLocal('✅ افتُحت نافذة الطباعة', 'ok');
+}catch(err){
+console.error('printApp error:', err);
+alert('خطأ في الطباعة: '+ (err && err.message || err));
+}
+}
+/* === نهاية v21 print system === */
+
+
 /* ===== Phase 11 (v14) — Parallel Authentication System for Employees ===== */
 const ADMIN_EMAIL = 'aliismaeil1985@gmail.com';
 const TEMP_PW_LIFETIME_MS = 60 * 60 * 1000;
@@ -6880,170 +7016,13 @@ return '<div style="margin-top:8px;padding:8px 12px;background:#f8fafc;border:1p
  * صفحة 1: لوحة البيانات (إحصاءات + توزيع)
  * صفحة 2: قائمة المهام (جدول كامل)
  */
-function _printEscape(s){
-return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function _printGetUserTasks(){
-try{
-var isAdmin = !!(CU && CU.role === 'admin');
-var isMgr = !!(CU && CU.role === 'manager');
-var tasks = DB && DB.tasks ? DB.tasks.slice() : [];
-if(!isAdmin && !isMgr && CU){
-tasks = tasks.filter(function(t){
-var assigned = Array.isArray(t.assignedTo) ? t.assignedTo : [];
-return assigned.indexOf(CU.id) !== -1 || t.createdBy === CU.id;
-});
-}
-return tasks;
-}catch(e){ console.error('_printGetUserTasks:', e); return []; }
-}
-function _printStatusLabel(s){
-var map = { completed:'مكتملة', in_progress:'جارية', waiting:'انتظار', pending:'انتظار', postponed:'مؤجلة', cancelled:'ملغاة' };
-return map[s] || (typeof STA !== 'undefined' && STA[s] && STA[s].label) || s || '-';
-}
-function _printPriorityLabel(p){
-var map = { urgent:'عاجل', high:'عالية', medium:'متوسطة', low:'منخفضة' };
-return map[p] || (typeof PRI !== 'undefined' && PRI[p] && PRI[p].label) || p || '-';
-}
-function _printUserNames(ids){
-try{
-if(!Array.isArray(ids) || ids.length===0) return '-';
-return ids.map(function(id){
-var u = DB.users.find(function(x){ return x.id===id; });
-return u ? u.name : ('#'+id);
-}).join('، ');
-}catch(e){ return '-'; }
-}
-function _printBreakdown(tasks, field){
-var counts = {};
-tasks.forEach(function(t){
-var v = t[field] || 'unknown';
-counts[v] = (counts[v] || 0) + 1;
-});
-var total = tasks.length || 1;
-var rows = '';
-Object.keys(counts).forEach(function(k){
-var n = counts[k];
-var pct = Math.round((n/total)*100);
-var label = field==='status' ? _printStatusLabel(k) : _printPriorityLabel(k);
-rows += '<tr><td>'+ _printEscape(label) +'</td><td style="text-align:center;font-weight:700">'+ n +'</td><td style="text-align:center">'+ pct +'%</td></tr>';
-});
-return rows || '<tr><td colspan="3" style="text-align:center;color:#94a3b8">لا توجد بيانات</td></tr>';
-}
-function printApp(){
-try{
-var tasks = _printGetUserTasks();
-var total = tasks.length;
-var completed = tasks.filter(function(t){ return t.status==='completed'; }).length;
-var inProg = tasks.filter(function(t){ return t.status==='in_progress'; }).length;
-var waiting = tasks.filter(function(t){ return t.status==='waiting' || t.status==='pending'; }).length;
-var todayMs = (new Date()).setHours(0,0,0,0);
-var overdue = tasks.filter(function(t){
-if(!t.deadline || t.status==='completed') return false;
-var d = new Date(t.deadline);
-return d.getTime() < todayMs;
-}).length;
-var pageTitle = CU && CU.name ? ('تقرير منصة تانيا — '+ CU.name) : 'تقرير منصة تانيا';
-var dateStr = new Date().toLocaleString('ar-SA');
-var userInfo = (CU && CU.name ? CU.name : '-') + (CU && CU.role ? ' ('+ (CU.role==='admin'?'أدمن':CU.role==='manager'?'مدير':'موظف') +')' : '');
-/* بناء صفوف جدول المهام */
-var taskRows = '';
-if(tasks.length === 0){
-taskRows = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px">لا توجد مهام</td></tr>';
-}else{
-tasks.forEach(function(t, i){
-var dueStr = t.deadline ? new Date(t.deadline).toLocaleDateString('ar-SA') : '-';
-var pri = t.priority || '-';
-var st = t.status || '-';
-var priColor = pri==='urgent'?'#be185d':pri==='high'?'#b91c1c':pri==='medium'?'#b45309':'#15803d';
-var stColor = st==='completed'?'#15803d':st==='in_progress'?'#1d4ed8':st==='waiting'?'#b45309':'#6b7280';
-taskRows += '<tr>'
-+ '<td style="text-align:center">'+ (i+1) +'</td>'
-+ '<td>'+ _printEscape(t.title || '-') +'</td>'
-+ '<td>'+ _printEscape(_printUserNames(t.assignedTo)) +'</td>'
-+ '<td style="color:'+ priColor +';font-weight:700;text-align:center">'+ _printEscape(_printPriorityLabel(pri)) +'</td>'
-+ '<td style="color:'+ stColor +';font-weight:700;text-align:center">'+ _printEscape(_printStatusLabel(st)) +'</td>'
-+ '<td style="text-align:center">'+ _printEscape(dueStr) +'</td>'
-+ '<td style="text-align:center">'+ (t.progress!=null ? t.progress+'%' : '0%') +'</td>'
-+ '</tr>';
-});
-}
-var statusBd = _printBreakdown(tasks, 'status');
-var priorityBd = _printBreakdown(tasks, 'priority');
-var w = window.open('', '_blank', 'width=900,height=700');
-if(!w){
-alert('تعذّر فتح نافذة الطباعة — يرجى السماح للنوافذ المنبثقة من إعدادات المتصفح');
-return;
-}
-var html = '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>'+ _printEscape(pageTitle) +'</title>'
-+ '<style>'
-+ '@page{size:A4 portrait;margin:12mm 10mm}'
-+ '*{box-sizing:border-box}'
-+ 'body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;direction:rtl;text-align:right;margin:0;padding:0;color:#0f172a;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-+ '.pg{page-break-after:always;padding:0}'
-+ '.pg:last-child{page-break-after:auto}'
-+ '.ph{text-align:center;padding:14px 18px;border-bottom:3px solid #5b50d6;margin-bottom:18px}'
-+ '.ph h1{margin:0 0 6px;font-size:22px;color:#0f172a;font-weight:800}'
-+ '.ph .sub{font-size:12px;color:#64748b}'
-+ 'h2.sec{font-size:15px;margin:14px 0 8px;color:#5b50d6;border-right:4px solid #5b50d6;padding-right:10px}'
-+ '.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:6px}'
-+ '.stat-card{padding:14px 12px;border-radius:10px;border:1.5px solid #e2e8f0;text-align:center;background:#fafbfc}'
-+ '.stat-card.green{background:#ecfdf5;border-color:#34d399}'
-+ '.stat-card.blue{background:#dbeafe;border-color:#60a5fa}'
-+ '.stat-card.orange{background:#fef3e2;border-color:#f8b76b}'
-+ '.stat-card.red{background:#fee2e2;border-color:#ef4444}'
-+ '.stat-card .num{font-size:26px;font-weight:900;line-height:1.1}'
-+ '.stat-card .lbl{font-size:11px;color:#475569;margin-top:6px;font-weight:600}'
-+ 'table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px}'
-+ 'th,td{border:1px solid #cbd5e1;padding:7px 9px;text-align:right;word-wrap:break-word}'
-+ 'th{background:#5b50d6;color:#fff;font-weight:700;font-size:12px;padding:9px 9px}'
-+ 'tr:nth-child(even) td{background:#f8fafc}'
-+ '.ft{text-align:center;font-size:10px;color:#94a3b8;margin-top:14px;padding-top:10px;border-top:1px dashed #cbd5e1}'
-+ '@media print{body{padding:0;margin:0}.pg{padding:0}}'
-+ '</style></head><body>'
-/* ===== صفحة 1: لوحة البيانات ===== */
-+ '<div class="pg">'
-+ '<div class="ph"><h1>📊 لوحة بيانات منصة تانيا</h1><div class="sub">'+ _printEscape(dateStr) +' &mdash; '+ _printEscape(userInfo) +'</div></div>'
-+ '<h2 class="sec">📈 إحصاءات سريعة</h2>'
-+ '<div class="stats-grid">'
-+ '<div class="stat-card"><div class="num" style="color:#5b50d6">'+ total +'</div><div class="lbl">إجمالي المهام</div></div>'
-+ '<div class="stat-card green"><div class="num" style="color:#15803d">'+ completed +'</div><div class="lbl">مكتملة</div></div>'
-+ '<div class="stat-card blue"><div class="num" style="color:#1d4ed8">'+ inProg +'</div><div class="lbl">جارية</div></div>'
-+ '<div class="stat-card orange"><div class="num" style="color:#b45309">'+ waiting +'</div><div class="lbl">انتظار</div></div>'
-+ '</div>'
-+ '<div class="stats-grid" style="grid-template-columns:1fr;margin-top:10px">'
-+ '<div class="stat-card red" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px"><div><div style="font-size:12px;color:#7f1d1d;font-weight:700;margin-bottom:4px">⚠️ المهام المتأخرة</div><div style="font-size:11px;color:#991b1b">عدد المهام التي تجاوزت موعدها النهائي ولم تكتمل</div></div><div style="font-size:32px;font-weight:900;color:#b91c1c">'+ overdue +'</div></div>'
-+ '</div>'
-+ '<h2 class="sec">📊 توزيع المهام حسب الحالة</h2>'
-+ '<table><thead><tr><th>الحالة</th><th style="text-align:center;width:80px">العدد</th><th style="text-align:center;width:80px">النسبة</th></tr></thead><tbody>'+ statusBd +'</tbody></table>'
-+ '<h2 class="sec">⚡ توزيع المهام حسب الأولوية</h2>'
-+ '<table><thead><tr><th>الأولوية</th><th style="text-align:center;width:80px">العدد</th><th style="text-align:center;width:80px">النسبة</th></tr></thead><tbody>'+ priorityBd +'</tbody></table>'
-+ '<div class="ft">صفحة 1 من 2 &mdash; لوحة البيانات &mdash; منصة تانيا</div>'
-+ '</div>'
-/* ===== صفحة 2: قائمة المهام ===== */
-+ '<div class="pg">'
-+ '<div class="ph"><h1>📋 قائمة المهام التفصيلية</h1><div class="sub">'+ _printEscape(dateStr) +' &mdash; '+ _printEscape(userInfo) +' &mdash; إجمالي: '+ total +' مهمة</div></div>'
-+ '<table><thead><tr>'
-+ '<th style="width:32px;text-align:center">#</th>'
-+ '<th>عنوان المهمة</th>'
-+ '<th style="width:140px">المُكلَّف</th>'
-+ '<th style="width:75px;text-align:center">الأولوية</th>'
-+ '<th style="width:75px;text-align:center">الحالة</th>'
-+ '<th style="width:85px;text-align:center">الموعد</th>'
-+ '<th style="width:55px;text-align:center">التقدّم</th>'
-+ '</tr></thead><tbody>'+ taskRows +'</tbody></table>'
-+ '<div class="ft">صفحة 2 من 2 &mdash; قائمة المهام &mdash; منصة تانيا</div>'
-+ '</div>'
-+ '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print();}catch(e){}},300);});</'+'script>'
-+ '</body></html>';
-w.document.open();
-w.document.write(html);
-w.document.close();
-}catch(err){
-console.error('printApp error:', err);
-alert('فشل تجهيز الطباعة: '+ (err && err.message || err));
-}
-}
+
+
+
+
+
+
+
 /* === نهاية v20 print system === */
 
 
