@@ -6025,12 +6025,18 @@ if(_isAdminUser) notif('📱 تم إرسال واتساب!');
 }
 async function sendEmail(preAssignIds, opts){
 var _isAdminUser = (typeof CU !== 'undefined' && CU && CU.role === 'admin');
-if(typeof CFG !== 'undefined' && CFG && CFG.emailAutoDisabled){
-if(_isAdminUser) notif('🔇 الإيميل التلقائي موقوف من لوحة الأدمن — لن يُرسَل','info');
+/* v19: نميّز بين الإرسال التلقائي (له reason) والإرسال اليدوي (لا opts) */
+var _emReason = (opts && opts.reason) || '';
+var _isManual = !opts || (!opts.reason && !opts.auto);
+
+/* الإيميل التلقائي الموقوف لا يمنع الإرسال اليدوي */
+if(!_isManual && typeof CFG !== 'undefined' && CFG && CFG.emailAutoDisabled){
+if(_isAdminUser) notif('🔇 الإيميل التلقائي موقوف — لن يُرسَل (الإرسال اليدوي ما زال يعمل)','info');
 return;
 }
-var _emReason = (opts && opts.reason) || '';
-if(_emReason !== 'new' && _emReason !== 'completed'){
+
+/* حارس "جديدة أو مكتملة" يطبَّق فقط على الإرسال التلقائي */
+if(!_isManual && _emReason !== 'new' && _emReason !== 'completed'){
 try {
 var _curTaskE = (typeof editTaskId !== 'undefined' && editTaskId) ? (DB && DB.tasks ? DB.tasks.find(function(x){return x.id===editTaskId;}) : null) : null;
 var _stEl = (typeof document !== 'undefined') ? document.getElementById('t-status') : null;
@@ -6038,14 +6044,32 @@ var _curStatusE = (_curTaskE && _curTaskE.status) || (_stEl && _stEl.value) || '
 var _isNewUnsavedE = (typeof editTaskId === 'undefined' || !editTaskId);
 var _isCompletedE = (_curStatusE === 'completed');
 if(!_isNewUnsavedE && !_isCompletedE){
-if(_isAdminUser) notif('📧 الإيميل يُرسَل فقط عند تعيين مهمة جديدة أو إكمالها','info');
+if(_isAdminUser) notif('📧 الإيميل التلقائي يُرسَل فقط عند تعيين مهمة جديدة أو إكمالها','info');
 return;
 }
 } catch(e){}
 }
-if(sendEmail._sending){if(_isAdminUser) notif("⏳ جارٍ الإرسال...","info");return;}
+
+/* قفل _sending: إذا علق لأكثر من 45 ثانية، نتجاوزه تلقائياً */
+if(sendEmail._sending){
+  var _stuckSince = sendEmail._sendingAt || 0;
+  if(Date.now() - _stuckSince > 45000){
+    console.warn('[sendEmail] قفل عالق — يُعاد تعيينه');
+    sendEmail._sending = false;
+  } else {
+    notif("⏳ جارٍ إرسال إيميل سابق...","info");
+    return;
+  }
+}
+
+/* تحقق من تحميل مكتبة EmailJS من CDN */
+if(typeof emailjs === 'undefined' || !emailjs || typeof emailjs.send !== 'function'){
+  notif("❌ مكتبة EmailJS لم تُحمَّل — تحقق من الإنترنت ثم أعد تحميل الصفحة","err");
+  return;
+}
+
 if(!CFG.pubkey||!CFG.svc||!CFG.tpl){
-if(_isAdminUser) notif("⚙️ يرجى إعداد الإيميل من الإعدادات","err");
+notif("⚙️ إعدادات EmailJS ناقصة (Public Key / Service ID / Template ID)","err");
 return;
 }
 const isMgr=(CU?.role==="manager"||CU?.role==="admin");
@@ -6065,10 +6089,11 @@ assignIds = _existing ? _existing.assignedTo : [CU?.id];
 }
 const assignedUsers = assignIds.map(id => DB.users.find(u => u.id === id)).filter(u => u && u.email && !u.emailDisabled && !u.frozen);
 if(assignedUsers.length === 0){
-if(_isAdminUser) notif("⚠️ لا يوجد مكلفون ببريد إلكتروني (أو تم إيقاف الإرسال لهم)","err");
+notif("⚠️ لا يوجد مكلَّفون ببريد إلكتروني (أو تم إيقاف الإرسال لهم)","err");
 return;
 }
 sendEmail._sending = true;
+sendEmail._sendingAt = Date.now();
 try{
 if(!window._emailjsInited && CFG.pubkey){
 emailjs.init(CFG.pubkey);
@@ -6127,23 +6152,37 @@ task_progress: $("t-prog").value + "%",
 task_notes: fullNotes,
 sender_name: senderName
 };
-await emailjs.send(CFG.svc, CFG.tpl, emailParams);
+/* مهلة 30 ثانية للإرسال — لو تجاوز الوقت نُلغي القفل ونرفع خطأ */
+const _emailTimeout = new Promise(function(_, reject){
+  setTimeout(function(){ reject(new Error('انتهت مهلة الإرسال (30 ثانية)')); }, 30000);
+});
+await Promise.race([emailjs.send(CFG.svc, CFG.tpl, emailParams), _emailTimeout]);
 notif("✉️ تم الإرسال بنجاح للمكلَّف" + (_ccEmail ? " ونسخة للمدير" : ""));
 }catch(e){
 console.error("EmailJS Error:", e);
 const _errText = e.text || e.message || "";
 let _errMsg = "❌ فشل الإرسال: " + (_errText || "تأكد من إعدادات EmailJS");
 if(_errText.includes("RefuseQuota") || _errText.includes("Daily Message") || _errText.includes("limit exceeded") || _errText.includes("ShowTierUpgrade")){
-_errMsg = "❌ Outlook: تجاوزت الحد اليومي للإرسال. الحل: غيّر خدمة الإيميل في EmailJS من Outlook إلى Gmail أو SendGrid";
+_errMsg = "❌ تجاوزت الحد اليومي لـ EmailJS — جرّب لاحقاً أو غيّر الخدمة (Gmail/SendGrid)";
 } else if(_errText.includes("verify your account")){
-_errMsg = "❌ Outlook: تحقق من حساب Outlook المربوط بـ EmailJS عبر الإيميل الوارد فيه";
+_errMsg = "❌ تحقق من حساب البريد المربوط بـ EmailJS";
+} else if(_errText.includes('Invalid') && _errText.toLowerCase().includes('public key')){
+_errMsg = "❌ Public Key غير صحيح — تحقق من إعدادات EmailJS";
+} else if(_errText.includes('template') || _errText.includes('Template')){
+_errMsg = "❌ Template ID غير صحيح أو القالب غير موجود في EmailJS";
+} else if(_errText.includes('service') || _errText.includes('Service')){
+_errMsg = "❌ Service ID غير صحيح أو الخدمة معطّلة في EmailJS";
+} else if(_errText.includes('مهلة')){
+_errMsg = "❌ " + _errText + " — تحقق من الاتصال بالإنترنت";
 }
 notif(_errMsg, "err");
 } finally {
 sendEmail._sending = false;
+sendEmail._sendingAt = 0;
 }
 }
 sendEmail._sending = false;
+sendEmail._sendingAt = 0;
 async function sendBoth(preAssignIds,preTaskData,opts){await Promise.allSettled([sendWA(preAssignIds,preTaskData),sendEmail(preAssignIds,opts)]);}
 let taskViewMode='table';
 function setTaskView(mode){
@@ -8176,6 +8215,19 @@ if(which === 'firebase'){
 try{ if(typeof initFirebase === 'function' && typeof FIREBASE_CFG !== 'undefined') initFirebase(FIREBASE_CFG); notif('🔄 جارٍ إعادة تشغيل Firebase'); }catch(e){ notif('❌ تعذر إعادة التشغيل','err'); }
 } else if(which === 'notif'){
 try{ window.dispatchEvent(new Event('ntf:reload')); notif('🔔 إعادة تحميل نظام الإشعارات'); }catch(e){}
+} else if(which === 'email'){
+/* تحرير قفل الإرسال + إعادة تهيئة EmailJS */
+try{
+sendEmail._sending = false;
+sendEmail._sendingAt = 0;
+window._emailjsInited = false;
+if(typeof emailjs !== 'undefined' && CFG && CFG.pubkey){
+emailjs.init(CFG.pubkey); window._emailjsInited = true;
+notif('📧 تم إعادة تشغيل نظام الإيميل');
+} else {
+notif('📧 تم تحرير قفل الإرسال — أعد تحميل الصفحة إن لزم','info');
+}
+}catch(e){ notif('❌ تعذر إعادة تشغيل الإيميل: '+(e.message||e),'err'); }
 }
 setTimeout(_renderPlatformTools, 500);
 }
