@@ -578,331 +578,393 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
 
 <style id="tania-print-styles">
 /* ================================================================
-   Tania universal print system v25 — auto-engages on ANY print
-   (Ctrl+P, browser menu, or the in-app print button — all work).
-   Page 1 = dashboard view  ·  Page 2 = professional task table
+   Tania print system v27 — Classic Professional Report
+   Page 1 = dashboard cards + charts + employees
+   Page 2 = detailed tasks table
+   Auto-engages on Ctrl+P or printApp button.
    ================================================================ */
 #tania-print-root{ display:none; }
 @media screen{ #tania-print-root{ display:none !important; } }
 
 @media print{
-  @page{ size:A4 portrait; margin:12mm; }
+  @page{ size:A4 portrait; margin:8mm; }
 
-  /* CRITICAL: only hide app content when body is marked "tania-printing"
-     (the JS adds this class in beforeprint, removes it in afterprint).
-     This means Ctrl+P also triggers our system, not just printApp(). */
   body.tania-printing{
     background:#fff !important; margin:0 !important; padding:0 !important;
     -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;
-    color:#0f172a !important;
-    font-family:"Segoe UI", Tahoma, "Tajawal", Arial, sans-serif !important;
-    font-size:10pt;
+    color:#1e293b !important;
+    font-family:"Tajawal","Cairo","Segoe UI",Tahoma,Arial,sans-serif !important;
+    font-size:9.5pt; line-height:1.4;
   }
   body.tania-printing > *{ display:none !important; }
   body.tania-printing > #tania-print-root{ display:block !important; }
 
-  /* Belt-and-suspenders: also force everything inside the print root
-     to print colors exactly as designed */
   #tania-print-root, #tania-print-root *{
     -webkit-print-color-adjust:exact !important;
     print-color-adjust:exact !important;
+    box-sizing:border-box;
   }
 
-  /* Hide all interactive controls inside the print root */
   #tania-print-root button, #tania-print-root .btn, #tania-print-root .pbtn,
   #tania-print-root input, #tania-print-root select, #tania-print-root textarea,
   #tania-print-root .toolbar, #tania-print-root .filters,
   #tania-print-root .no-print, #tania-print-root [data-no-print]{ display:none !important; }
 
   /* ===== Page container ===== */
-  .tp-page{ page-break-after:always; break-after:page; }
+  .tp-page{
+    page-break-after:always; break-after:page;
+    position:relative;
+    padding:4mm 0;
+  }
   .tp-page:last-child{ page-break-after:auto; break-after:auto; }
 
-  /* ===== Header ===== */
+  /* ============ HEADER ============ */
   .tp-header{
     display:flex; align-items:center; justify-content:space-between;
-    gap:10px; padding:8px 12px; margin-bottom:10px;
-    background:linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
-    color:#fff !important; border-radius:10px;
+    gap:10px; padding:9px 12px 10px;
+    border-bottom:3px solid #1e3a8a;
+    margin-bottom:12px;
+    background:linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
   }
-  .tp-header .tp-logo{
-    width:42px; height:42px; border-radius:10px;
-    background:rgba(255,255,255,.2) !important; color:#fff !important;
-    display:flex; align-items:center; justify-content:center;
-    font-weight:900; font-size:18px; flex-shrink:0;
-    border:2px solid rgba(255,255,255,.4);
+  .tp-hdr-left{
+    display:flex; align-items:center; gap:12px;
   }
-  .tp-header .tp-title{
-    flex:1; text-align:center;
-    font-size:14pt; font-weight:800; color:#fff !important;
+  .tp-hdr-logo{
+    width:54px; height:54px;
+    background:#fff; border-radius:8px;
+    border:1px solid #e2e8f0;
+    padding:3px; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
   }
-  .tp-header .tp-meta{
-    text-align:end; font-size:8.5pt; color:rgba(255,255,255,.95) !important;
-    line-height:1.5; min-width:130px;
+  .tp-hdr-logo img{ width:100%; height:100%; object-fit:contain; }
+  .tp-hdr-title-block .tt{
+    font-size:16pt; font-weight:900; color:#1e3a8a;
+    font-family:"Cairo","Tajawal",sans-serif; line-height:1.1;
   }
-  .tp-header .tp-meta strong{ color:#fff !important; font-weight:700; }
+  .tp-hdr-title-block .ss{
+    font-size:8pt; color:#475569; font-family:"Inter",sans-serif;
+    letter-spacing:1.5px; margin-top:3px; font-weight:600;
+  }
+  .tp-hdr-meta{
+    text-align:left; font-size:9pt; color:#475569; line-height:1.7;
+    background:#fff; padding:7px 12px;
+    border-radius:6px; border:1px solid #cbd5e1;
+  }
+  .tp-hdr-meta div{ display:flex; gap:6px; justify-content:flex-end; }
+  .tp-hdr-meta .lbl{ color:#94a3b8; font-weight:700; font-size:8pt; }
+  .tp-hdr-meta .val{ font-weight:800; color:#1e293b; }
 
-  /* ===== 7 summary cards row ===== */
-  .tp-cards-row{
-    display:grid; grid-template-columns:repeat(7, 1fr);
-    gap:5px; margin:10px 0;
+  /* ============ FILTERS BAR ============ */
+  .tp-filters-bar{
+    display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+    background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px;
+    padding:6px 10px; margin-bottom:10px;
+    font-size:8pt; color:#475569;
     page-break-inside:avoid; break-inside:avoid;
   }
-  .tp-card-mini{
-    border:1px solid #e2e8f0; border-top-width:3px;
-    border-radius:8px; padding:7px 5px; text-align:center;
-    background:#fff !important; box-shadow:0 1px 2px rgba(0,0,0,.04);
-    page-break-inside:avoid; break-inside:avoid;
+  .tp-filters-bar .f-label{ font-weight:800; color:#1e293b; font-size:8.5pt; }
+  .tp-filters-bar .chip{
+    display:inline-block;
+    background:#fff; border:1px solid #cbd5e1;
+    padding:2px 9px; border-radius:11px; font-weight:700; font-size:7.5pt;
   }
-  .tp-card-mini.tp-card-highlight{
-    background:linear-gradient(180deg,#fef2f2 0%,#ffffff 100%) !important;
-    border-color:#ef4444;
-  }
-  .tp-card-mini .tp-cm-icon{
-    width:26px; height:26px; border-radius:50%;
-    margin:0 auto 4px; color:#fff !important;
-    display:flex; align-items:center; justify-content:center;
-    font-size:11pt; font-weight:900;
-  }
-  .tp-card-mini .tp-cm-label{
-    font-size:7.5pt; color:#64748b !important; font-weight:700;
-    margin-bottom:2px; line-height:1.2;
-  }
-  .tp-card-mini .tp-cm-value{
-    font-size:18pt; font-weight:900; line-height:1;
-  }
-  .tp-card-mini .tp-cm-note{
-    font-size:6.5pt; color:#dc2626 !important; font-weight:700;
-    margin-top:2px; line-height:1.1;
+  .tp-filters-bar .chip-blue{
+    background:#dbeafe; border-color:#93c5fd; color:#1e3a8a;
   }
 
-  /* ===== Progress circles row ===== */
-  .tp-circles-row{
+  /* ============ SECTION HEADING ============ */
+  .tp-section-title{
+    display:flex; align-items:center; gap:6px;
+    font-size:9.5pt; font-weight:900; color:#1e293b;
+    margin:6px 0 7px;
+    padding-bottom:4px;
+    border-bottom:1.5px dashed #cbd5e1;
+  }
+  .tp-section-title .bar{
+    width:4px; height:13px; border-radius:2px;
+    background:#1e3a8a;
+  }
+  .tp-section-title .en{
+    font-family:"Inter",sans-serif; font-weight:600; font-size:7.5pt;
+    color:#94a3b8; letter-spacing:.5px; margin-right:auto;
+  }
+
+  /* ============ STATS GRID (6 cards) ============ */
+  .tp-stats-grid{
+    display:grid; grid-template-columns:repeat(6, 1fr); gap:5px;
+    margin-bottom:12px;
+    page-break-inside:avoid; break-inside:avoid;
+  }
+  .tp-stat-card{
+    background:#fff; border:1px solid #e2e8f0; border-top:3px solid #2563eb;
+    border-radius:6px; padding:8px 6px 9px;
+    text-align:center; min-height:78px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  }
+  .tp-stat-card .ic{
+    width:24px; height:24px; border-radius:50%;
+    background:#2563eb; color:#fff !important;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11pt; font-weight:900; line-height:1;
+    margin-bottom:2px;
+  }
+  .tp-stat-card .val{
+    font-size:20pt; font-weight:900; color:#1e293b;
+    font-family:"Inter","Tajawal",sans-serif; line-height:1;
+  }
+  .tp-stat-card .lbl{
+    font-size:7.5pt; font-weight:800; color:#475569;
+    text-align:center; line-height:1.1;
+  }
+  .tp-stat-card .lbl-en{
+    font-size:6pt; color:#94a3b8; font-family:"Inter",sans-serif;
+    font-weight:600; letter-spacing:.3px;
+  }
+  .tp-stat-card.overdue{
+    background:#fef2f2; border-top-color:#ef4444;
+  }
+  .tp-stat-card.overdue .val{ color:#dc2626; }
+
+  /* ============ PROGRESS CIRCLES (4) ============ */
+  .tp-progress-row{
     display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;
-    padding:10px 14px; margin:10px 0;
-    background:#f8fafc !important; border:1px solid #e2e8f0; border-radius:10px;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+    padding:10px 8px; margin-bottom:12px;
     page-break-inside:avoid; break-inside:avoid;
   }
-  .tp-pcircle{ text-align:center; }
-  .tp-pcircle svg{ display:block; margin:0 auto; }
-  .tp-pcircle-count{
-    font-size:8pt; color:#64748b !important; margin-top:2px;
+  .tp-pcircle{
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+    text-align:center;
   }
-  .tp-pcircle-label{
-    display:inline-block; margin-top:4px; padding:2px 10px;
-    border-radius:10px; font-size:8.5pt; font-weight:800;
+  .tp-pcircle svg{ display:block; }
+  .tp-pcircle .lbl-row{
+    font-size:8.5pt; font-weight:800;
+    padding:2px 10px; border-radius:11px;
+  }
+  .tp-pcircle .ct{
+    font-size:7pt; color:#64748b; font-weight:700;
   }
 
-  /* ===== Two distribution panels ===== */
-  .tp-dist-row{
-    display:grid; grid-template-columns:1fr 1fr; gap:10px;
-    margin:10px 0; page-break-inside:avoid; break-inside:avoid;
-  }
-  .tp-chart-panel{
-    border:1px solid #e2e8f0; border-radius:10px;
-    padding:10px 12px; background:#fff !important;
-    box-shadow:0 1px 3px rgba(0,0,0,.04);
+  /* ============ CHARTS ROW ============ */
+  .tp-charts-row{
+    display:grid; grid-template-columns:1fr 1fr; gap:8px;
+    margin-bottom:12px;
     page-break-inside:avoid; break-inside:avoid;
   }
-  .tp-chart-title{
-    display:flex; align-items:center; gap:6px;
-    font-size:10pt; font-weight:800; color:#1e293b !important; margin-bottom:2px;
+  .tp-chart-card{
+    background:#fff; border:1px solid #e2e8f0; border-radius:8px;
+    padding:10px;
   }
-  .tp-chart-title .tp-chart-icon{
-    width:22px; height:22px; border-radius:6px;
-    display:inline-flex; align-items:center; justify-content:center;
-    color:#fff !important; font-size:10pt;
+  .tp-chart-head{
+    display:flex; align-items:center; gap:7px; margin-bottom:8px;
+    padding-bottom:6px; border-bottom:1px dashed #e2e8f0;
   }
-  .tp-chart-subtitle{
-    font-size:7.5pt; color:#94a3b8 !important; margin-bottom:8px;
+  .tp-chart-head .ic{
+    width:22px; height:22px; border-radius:5px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:9pt; color:#fff !important; line-height:1;
   }
-  .tp-hbars{ padding:4px 0; }
-  .tp-hbar-row{
-    display:grid; grid-template-columns:74px 1fr 22px;
-    align-items:center; gap:6px; padding:3px 0;
+  .tp-chart-head .tt{ font-size:9pt; font-weight:900; color:#1e293b; line-height:1.2; }
+  .tp-chart-head .ss{ font-size:7pt; color:#94a3b8; margin-top:1px; }
+
+  /* Bar chart */
+  .tp-barchart{ display:flex; flex-direction:column; gap:7px; padding:2px 0; }
+  .tp-bar-row{
+    display:grid; grid-template-columns:55px 1fr 22px;
+    align-items:center; gap:6px; font-size:8pt;
   }
-  .tp-hbar-label{
-    font-size:8.5pt; font-weight:700; color:#475569 !important;
-    display:flex; align-items:center; gap:4px;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  }
-  .tp-hbar-track{
-    height:10px; background:#f1f5f9 !important; border-radius:5px;
-    overflow:hidden; border:1px solid #e2e8f0;
-  }
-  .tp-hbar-fill{ height:100%; border-radius:5px; }
-  .tp-hbar-val{
-    text-align:end; font-size:9pt; font-weight:800; color:#1e293b !important;
-    font-variant-numeric:tabular-nums;
-  }
+  .tp-bar-row .bn{ font-weight:800; color:#1e293b; }
+  .tp-bar-track{ height:8px; background:#f1f5f9; border-radius:99px; overflow:hidden; }
+  .tp-bar-fill{ height:100%; border-radius:99px; }
+  .tp-bar-row .bv{ font-weight:900; text-align:left; font-family:"Inter","Tajawal",sans-serif; }
+
+  /* Donut chart */
   .tp-donut-wrap{
-    display:flex; align-items:center; gap:10px; padding:4px 0;
+    display:grid; grid-template-columns:95px 1fr; gap:8px; align-items:center;
   }
-  .tp-donut-wrap svg{ flex-shrink:0; }
-  .tp-donut-legend{
-    flex:1; display:flex; flex-direction:column; gap:5px;
+  .tp-donut-svg{ width:95px; height:95px; position:relative; }
+  .tp-donut-svg svg{ display:block; }
+  .tp-donut-center{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
   }
-  .tp-donut-leg-item{
-    display:flex; align-items:center; gap:6px;
-    font-size:8.5pt; color:#334155 !important; font-weight:600;
+  .tp-donut-center .l{ font-size:7pt; color:#94a3b8; font-weight:700; }
+  .tp-donut-center .v{ font-size:15pt; font-weight:900; color:#1e293b; font-family:"Inter","Tajawal",sans-serif; line-height:1; }
+  .tp-donut-legend{ display:flex; flex-direction:column; gap:4px; font-size:8pt; }
+  .tp-donut-legend .li{
+    display:flex; align-items:center; gap:5px;
   }
-  .tp-swatch{
-    display:inline-block; width:10px; height:10px; border-radius:2px;
-    border:1px solid rgba(0,0,0,.1); flex-shrink:0;
+  .tp-donut-legend .sw{
+    width:9px; height:9px; border-radius:2px; flex-shrink:0;
   }
+  .tp-donut-legend .nm{ font-weight:700; color:#1e293b; flex:1; }
+  .tp-donut-legend .num{ font-weight:900; font-family:"Inter","Tajawal",sans-serif; }
 
-  /* ===== Employee chart ===== */
-  .tp-emp-chart{
-    border:1px solid #e2e8f0; border-radius:10px;
-    padding:10px 14px; background:#fff !important;
-    box-shadow:0 1px 3px rgba(0,0,0,.04);
-    margin:10px 0;
+  /* ============ EMPLOYEE BARS (SVG grouped chart) ============ */
+  .tp-emp-card{
+    background:#fff; border:1px solid #e2e8f0; border-radius:8px;
+    padding:10px 12px 12px; margin-top:8px;
     page-break-inside:avoid; break-inside:avoid;
   }
   .tp-emp-legend{
-    display:flex; flex-wrap:wrap; gap:10px; margin:6px 0 4px;
+    display:flex; gap:14px; flex-wrap:wrap;
+    justify-content:center; margin:8px 0 6px;
+    padding:6px 8px; background:#f8fafc; border-radius:5px;
+    font-size:8.5pt;
   }
-  .tp-leg{
-    display:flex; align-items:center; gap:5px;
-    font-size:8pt; font-weight:700; color:#475569 !important;
+  .tp-emp-legend .li{ display:flex; align-items:center; gap:5px; color:#1e293b; font-weight:800; }
+  .tp-emp-legend .sw{ width:11px; height:11px; border-radius:2px; }
+  .tp-emp-svg{
+    width:100%; padding:4px 0 0;
   }
-  .tp-emp-bars{
-    display:flex; align-items:flex-end; justify-content:space-around;
-    height:110px; margin:10px 0 4px; gap:10px;
-    border-bottom:2px solid #cbd5e1;
-    padding:0 5px;
-  }
-  .tp-emp-bar-col{
-    flex:1; max-width:90px;
-    display:flex; flex-direction:column; align-items:center;
-    height:100%; position:relative;
-  }
-  .tp-emp-bar-stack{
-    width:60%; max-width:42px; height:100%;
-    display:flex; flex-direction:column-reverse;
-    justify-content:flex-end;
-    border-radius:4px 4px 0 0; overflow:hidden;
-    background:#f1f5f9 !important; border:1px solid #e2e8f0;
-  }
-  .tp-emp-bar-seg{
-    width:100%; min-height:1px;
-    display:flex; align-items:center; justify-content:center;
-    color:#fff !important; font-size:7.5pt; font-weight:800;
-  }
-  .tp-emp-bar-name{
-    font-size:8pt; font-weight:700; color:#334155 !important;
-    margin-top:6px; text-align:center; line-height:1.2;
-    max-width:80px; word-wrap:break-word;
-  }
-  .tp-emp-bar-total{
-    position:absolute; top:-14px; left:50%; transform:translateX(-50%);
-    font-size:8pt; font-weight:800; color:#0f172a !important;
-    background:#fff !important; padding:0 4px; border-radius:3px;
-  }
+  .tp-emp-svg svg{ width:100%; height:auto; max-height:90mm; }
 
-  /* ===== Footer ===== */
-  .tp-footer{
-    margin-top:8px; padding-top:5px;
-    border-top:1px dashed #cbd5e1;
-    display:flex; justify-content:space-between;
-    font-size:7.5pt; color:#94a3b8 !important;
+  /* ============ TASKS TABLE (Page 2) ============ */
+  .tp-tbl-wrap{
+    border:1px solid #cbd5e1; border-radius:6px; overflow:hidden;
   }
-
-  /* ===== Page 2 — professional task table ===== */
-  .tp-section{ margin:8px 0; }
-  .tp-section-title{
-    font-size:11pt; font-weight:800; color:#1e293b !important;
-    padding:6px 10px; margin:0 0 10px;
-    background:linear-gradient(90deg,#eff6ff 0%, #ffffff 100%) !important;
-    border-inline-start:4px solid #2563eb; border-radius:4px;
+  table.tp-tasks-pro{
+    width:100%; border-collapse:collapse; font-size:8pt; table-layout:fixed;
   }
-  .tp-tasks-pro{
-    width:100%; border-collapse:separate; border-spacing:0;
-    font-size:8.5pt; table-layout:fixed;
-    border-radius:8px; overflow:hidden;
-    box-shadow:0 1px 4px rgba(0,0,0,.06);
+  table.tp-tasks-pro thead{
+    background:#1e3a8a;
   }
-  .tp-tasks-pro thead{ display:table-header-group; }
-  .tp-tasks-pro tfoot{ display:table-footer-group; }
-  .tp-tasks-pro thead th{
-    background:linear-gradient(180deg, #1e3a8a 0%, #1e293b 100%) !important;
-    color:#fff !important; font-weight:800;
-    padding:8px 6px; text-align:start; font-size:8.5pt;
-    border-bottom:2px solid #0f172a;
+  table.tp-tasks-pro thead th{
+    color:#fff !important; font-weight:800; font-size:8.5pt;
+    padding:8px 5px; text-align:right; letter-spacing:.2px;
+    border-left:1px solid #3b4f9c;
+    overflow:hidden; text-overflow:ellipsis;
   }
-  .tp-tasks-pro tbody tr{
-    page-break-inside:avoid; break-inside:avoid;
+  table.tp-tasks-pro thead th:last-child{ border-left:none; }
+  table.tp-tasks-pro thead th.c{ text-align:center; }
+  table.tp-tasks-pro tbody tr{ border-bottom:1px solid #e2e8f0; }
+  table.tp-tasks-pro tbody tr:nth-child(even){ background:#f8fafc; }
+  table.tp-tasks-pro tbody tr.late{
+    background:#fef2f2 !important;
+    border-right:3px solid #ef4444;
   }
-  .tp-tasks-pro tbody td{
-    padding:7px 6px; border-bottom:1px solid #e2e8f0;
-    vertical-align:middle; word-wrap:break-word; overflow-wrap:anywhere;
-    background:#fff !important;
+  table.tp-tasks-pro tbody td{
+    padding:7px 5px; color:#1e293b; vertical-align:middle; font-size:8pt;
+    line-height:1.3;
+    overflow:hidden;
   }
-  .tp-tasks-pro tbody tr:nth-child(even) td{ background:#f8fafc !important; }
-  .tp-tasks-pro tbody tr:last-child td{ border-bottom:none; }
-
-  .tp-tasks-pro .tp-task-num{
-    text-align:center; font-weight:800; color:#64748b !important;
-    font-variant-numeric:tabular-nums;
+  table.tp-tasks-pro td.c{ text-align:center; }
+  .tp-task-num{
+    display:inline-block;
+    font-family:"Inter","Tajawal",sans-serif; font-weight:800;
+    color:#475569; font-size:8pt;
   }
-  .tp-tasks-pro .tp-task-title-cell strong{
-    display:block; font-weight:700; color:#0f172a !important; line-height:1.3;
+  .tp-task-title{
+    font-weight:800; font-size:8pt; color:#1e293b;
+    font-family:"Tajawal","Cairo",sans-serif;
+    word-wrap:break-word; overflow-wrap:break-word; word-break:break-word;
+    line-height:1.3;
+  }
+  .tp-task-desc{
+    font-size:6.5pt; color:#94a3b8; margin-top:1px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .tp-task-serial{
-    display:inline-block; font-family:monospace;
-    background:#eef2ff !important; color:#4338ca !important;
-    padding:1px 6px; border-radius:4px;
-    font-size:7.5pt; font-weight:700;
-    margin-inline-end:4px;
+    display:inline-block;
+    background:#eef2ff; color:#1e3a8a;
+    font-family:"Inter","Tajawal",sans-serif;
+    font-weight:800; font-size:7pt;
+    padding:1px 5px; border-radius:3px; margin-left:4px;
   }
-  .tp-task-dept{
-    display:block; font-size:7.5pt; color:#94a3b8 !important;
-    margin-top:2px;
+  .tp-emp-cell{
+    display:flex; align-items:center; gap:4px;
+    overflow:hidden;
   }
-
+  .tp-emp-cell .ec{
+    width:18px; height:18px; border-radius:50%;
+    background:#3b82f6; color:#fff !important;
+    display:flex; align-items:center; justify-content:center;
+    font-size:7pt; font-weight:800;
+    font-family:"Inter","Tajawal",sans-serif;
+    flex-shrink:0;
+  }
+  .tp-emp-cell .nm{
+    font-weight:700; font-size:7.5pt;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    line-height:1.3;
+  }
+  .tp-task-dept{ font-size:8pt; color:#475569; font-weight:700; }
   .tp-pill{
-    display:inline-block; padding:3px 10px; border-radius:99px;
-    font-size:7.5pt; font-weight:800; line-height:1.4;
-    border:1px solid currentColor; white-space:nowrap;
+    display:inline-block;
+    padding:2px 7px; border-radius:99px;
+    font-size:7.5pt; font-weight:800;
+    white-space:nowrap; line-height:1.3;
   }
-  .tp-pill-pri-urgent { background:rgba(239,68,68,.12) !important;  color:#b91c1c !important; }
-  .tp-pill-pri-high   { background:rgba(249,115,22,.12) !important; color:#c2410c !important; }
-  .tp-pill-pri-medium { background:rgba(234,179,8,.15) !important;  color:#a16207 !important; }
-  .tp-pill-pri-low    { background:rgba(34,197,94,.12) !important;  color:#15803d !important; }
-  .tp-pill-sta-pending     { background:rgba(148,163,184,.18) !important; color:#475569 !important; }
-  .tp-pill-sta-in_progress { background:rgba(249,115,22,.12) !important;  color:#c2410c !important; }
-  .tp-pill-sta-completed   { background:rgba(16,185,129,.14) !important;  color:#047857 !important; }
-  .tp-pill-sta-postponed   { background:rgba(168,85,247,.12) !important;  color:#7c3aed !important; }
-  .tp-pill-sta-cancelled   { background:rgba(100,116,139,.15) !important; color:#475569 !important; }
-
-  .tp-tasks-pro .tp-deadline-late{ color:#b91c1c !important; font-weight:800; }
-  .tp-tasks-pro .tp-deadline-late::before{ content:"⚠ "; }
-
-  .tp-progress-mini{ display:flex; align-items:center; gap:6px; }
+  .tp-pill-sta-completed   { background:#d1fae5; color:#047857; }
+  .tp-pill-sta-in_progress { background:#ffedd5; color:#c2410c; }
+  .tp-pill-sta-pending     { background:#fef3c7; color:#a16207; }
+  .tp-pill-sta-postponed   { background:#ede9fe; color:#7c3aed; }
+  .tp-pill-sta-cancelled   { background:#fee2e2; color:#b91c1c; }
+  .tp-pill-pri-urgent      { background:#fee2e2; color:#b91c1c; }
+  .tp-pill-pri-high        { background:#ffedd5; color:#c2410c; }
+  .tp-pill-pri-medium      { background:#fef3c7; color:#a16207; }
+  .tp-pill-pri-low         { background:#d1fae5; color:#047857; }
+  .tp-progress-mini{ display:flex; align-items:center; gap:4px; }
   .tp-progress-mini-bar{
-    flex:1; height:6px; background:#e2e8f0 !important;
-    border-radius:3px; overflow:hidden;
-    border:1px solid #cbd5e1;
+    flex:1; height:5px; background:#e2e8f0;
+    border-radius:99px; overflow:hidden;
   }
-  .tp-progress-mini-fill{ height:100%; border-radius:3px; }
+  .tp-progress-mini-fill{ height:100%; border-radius:99px; }
   .tp-progress-mini-pct{
-    font-size:8.5pt; font-weight:800; color:#1e293b !important;
-    min-width:32px; text-align:end;
-    font-variant-numeric:tabular-nums;
+    font-size:7.5pt; font-weight:800;
+    font-family:"Inter","Tajawal",sans-serif;
+    min-width:24px; text-align:left;
   }
+  .tp-task-date{
+    font-family:"Inter","Tajawal",sans-serif;
+    font-size:7.5pt; color:#475569;
+  }
+  .tp-deadline-late{ color:#dc2626 !important; font-weight:800; }
 
+  /* ============ TABLE FOOTER SUMMARY ============ */
+  .tp-tbl-summary{
+    margin-top:10px; padding:9px;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;
+    display:grid; grid-template-columns:repeat(6, 1fr); gap:6px;
+    page-break-inside:avoid; break-inside:avoid;
+  }
+  .tp-tbl-summary .it{
+    text-align:center; padding:3px 2px;
+    border-left:1px solid #e2e8f0;
+  }
+  .tp-tbl-summary .it:last-child{ border-left:none; }
+  .tp-tbl-summary .it .v{
+    font-size:14pt; font-weight:900;
+    font-family:"Inter","Tajawal",sans-serif; line-height:1;
+  }
+  .tp-tbl-summary .it .l{
+    font-size:7pt; color:#64748b; font-weight:700; margin-top:2px;
+  }
   .tp-empty{
-    text-align:center; color:#94a3b8 !important;
-    padding:20px; font-size:9pt; font-style:italic;
+    padding:20px; text-align:center; color:#94a3b8;
+    font-size:9pt; font-style:italic;
   }
 
-  /* Optional grayscale mode */
+  /* ============ FOOTER ============ */
+  .tp-footer{
+    margin-top:14px;
+    padding:6px 8px; border-top:1px solid #e2e8f0;
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:7pt; color:#94a3b8;
+  }
+  .tp-footer .pg{
+    font-family:"Inter","Tajawal",sans-serif;
+    font-weight:800; color:#475569;
+  }
+
+  /* ============ GRAYSCALE MODE ============ */
   #tania-print-root.tp-bw,
   #tania-print-root.tp-bw *{
     filter:grayscale(100%) !important;
     -webkit-filter:grayscale(100%) !important;
   }
 }
+
 </style>
 
 </head> <body>
@@ -3457,14 +3519,13 @@ await db_fire.collection('login_audit').add(entry);
     if(vis(document.getElementById('pg-mgr')))   return 'mgr';
     if(vis(document.getElementById('pg-emp')))   return 'emp';
     if(vis(document.getElementById('pg-admin'))) return 'admin';
-    /* fallback when called BEFORE login or while modals cover the page:
-       choose role from current user if available */
-    if(window.CU && CU.role){
-      if(CU.role==='admin')    return 'admin';
-      if(CU.role==='manager')  return 'mgr';
+    var _cu = (typeof CU !== 'undefined' && CU) ? CU : (window.CU || null);
+    if(_cu && _cu.role){
+      if(_cu.role==='admin')    return 'admin';
+      if(_cu.role==='manager')  return 'mgr';
       return 'emp';
     }
-    return 'mgr'; /* last-resort default so beforeprint still produces output */
+    return 'mgr';
   }
   function _getEffectiveStatus(t, uid){
     try{ if(uid!=null && typeof getTaskStatusForUser==='function'){
@@ -3479,8 +3540,9 @@ await db_fire.collection('login_audit').add(entry);
   function _baseTaskPool(){
     var pool = [];
     try{
-      if(window.DB && Array.isArray(DB.tasks)){
-        pool = DB.tasks.filter(function(t){
+      var _db = (typeof DB !== 'undefined' && DB) ? DB : (window.DB || null);
+      if(_db && Array.isArray(_db.tasks)){
+        pool = _db.tasks.filter(function(t){
           if(!t) return false;
           if(typeof isRecurringTemplate==='function' && isRecurringTemplate(t)) return false;
           if(t.archived) return false;
@@ -3504,7 +3566,8 @@ await db_fire.collection('login_audit').add(entry);
   function _gatherTasksForPage(page){
     var pool = _baseTaskPool();
     if(page==='emp'){
-      var uid = (window.CU && CU.id) ? CU.id : null;
+      var _cu = (typeof CU !== 'undefined' && CU) ? CU : (window.CU || null);
+      var uid = (_cu && _cu.id != null) ? _cu.id : null;
       pool = pool.filter(function(t){
         var a = Array.isArray(t.assignedTo)?t.assignedTo:(t.assignedTo?[t.assignedTo]:[]);
         return uid!=null && a.indexOf(uid)>-1;
@@ -3637,253 +3700,425 @@ await db_fire.collection('login_audit').add(entry);
          + '</svg>';
   }
 
-  /* ---------- HTML section builders ------------------------------------ */
-  function _hdr(title){
-    var who = (window.CU && CU.name) ? CU.name : '—';
-    var role = window.CU && CU.role
-      ? (CU.role==='admin'   ? _tr('roleAdmin',   'أدمن', 'Admin')
-       : CU.role==='manager' ? _tr('roleManager', 'مدير', 'Manager')
+  /* ---------- HTML section builders (Classic Professional v27) ------- */
+  var _LOGO_DATA_URL = 'data:image/png;base64,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';
+
+  function _getCU(){
+    try{ if(typeof CU !== 'undefined' && CU) return CU; }catch(_e){}
+    return window.CU || null;
+  }
+
+  function _hdr(title, subtitle){
+    var cu = _getCU();
+    var who = (cu && cu.name) ? cu.name : '—';
+    var role = cu && cu.role
+      ? (cu.role==='admin'   ? _tr('roleAdmin',   'أدمن', 'Admin')
+       : cu.role==='manager' ? _tr('roleManager', 'مدير', 'Manager')
        : _tr('roleEmployee', 'موظف', 'Employee'))
       : '';
-    var lblU = _isAr() ? 'المستخدم' : 'User';
-    var lblD = _isAr() ? 'التاريخ'  : 'Date';
+    var refNum = 'RPT-' + (new Date()).toISOString().slice(0,10).replace(/-/g,'') + '-' + String(Math.floor(Math.random()*9999)).padStart(4,'0');
+    var now = new Date();
+    var dStr = now.toLocaleDateString(_isAr()?'ar-EG-u-nu-latn':'en-GB');
+    var tStr = now.toLocaleTimeString(_isAr()?'ar-EG-u-nu-latn':'en-GB',{hour:'2-digit',minute:'2-digit'});
+    var lblD = _isAr() ? 'التاريخ:'    : 'Date:';
+    var lblU = _isAr() ? 'المستخدم:'   : 'User:';
+    var lblR = _isAr() ? 'رقم التقرير:' : 'Ref:';
+    subtitle = subtitle || (_isAr() ? 'DASHBOARD REPORT' : 'تقرير لوحة البيانات');
     return '<header class="tp-header">'
-         + '<div class="tp-logo">T</div>'
-         + '<div class="tp-title">'+_esc(title)+'</div>'
-         + '<div class="tp-meta">'
-         +   '<div><strong>'+lblU+':</strong> '+_esc(who)+(role?' ('+_esc(role)+')':'')+'</div>'
-         +   '<div><strong>'+lblD+':</strong> '+_esc(_fmtDateTime())+'</div>'
-         + '</div></header>';
+         + '<div class="tp-hdr-left">'
+         +   '<div class="tp-hdr-logo"><img src="'+_LOGO_DATA_URL+'" alt="logo"></div>'
+         +   '<div class="tp-hdr-title-block">'
+         +     '<div class="tt">'+_esc(title)+'</div>'
+         +     '<div class="ss">'+_esc(subtitle)+'</div>'
+         +   '</div>'
+         + '</div>'
+         + '<div class="tp-hdr-meta">'
+         +   '<div><span class="val">'+_esc(dStr)+' — '+_esc(tStr)+'</span><span class="lbl">'+lblD+'</span></div>'
+         +   '<div><span class="val">'+_esc(who)+(role?' ('+_esc(role)+')':'')+'</span><span class="lbl">'+lblU+'</span></div>'
+         +   '<div><span class="val" style="font-family:Inter,Tajawal,sans-serif;font-size:7pt">'+_esc(refNum)+'</span><span class="lbl">'+lblR+'</span></div>'
+         + '</div>'
+         + '</header>';
   }
+
   function _footer(page, total){
-    var brand = _isAr() ? 'منصة تانيا © 2026' : 'Tania Platform © 2026';
+    var brand = _isAr() ? 'منصة WH Taska © 2026 — تقرير سرّي للاستخدام الداخلي'
+                       : 'WH Taska © 2026 — Confidential Internal Report';
     var p = _isAr() ? ('صفحة '+page+' من '+total) : ('Page '+page+' of '+total);
-    return '<div class="tp-footer"><span>'+_esc(brand)+'</span><span>'+_esc(p)+'</span></div>';
+    return '<div class="tp-footer"><span>'+_esc(brand)+'</span><span class="pg">'+_esc(p)+'</span></div>';
   }
+
+  function _filtersBar(){
+    var lblF = _isAr() ? '🔍 الفلاتر المطبقة:' : '🔍 Active filters:';
+    var lblPeriod = _isAr() ? 'الفترة:' : 'Period:';
+    var lblEmp    = _isAr() ? 'الموظف:' : 'Employee:';
+    var lblSta    = _isAr() ? 'الحالة:' : 'Status:';
+    var lblPri    = _isAr() ? 'الأولوية:' : 'Priority:';
+    var all       = _isAr() ? 'الكل' : 'All';
+    var period = all, emp = all, sta = all, pri = all;
+    try{
+      var fromEl = document.getElementById('f-from'), toEl = document.getElementById('f-to');
+      var fStr = fromEl && fromEl.value ? fromEl.value : '';
+      var tStr = toEl   && toEl.value   ? toEl.value   : '';
+      if(fStr || tStr) period = (fStr || '...') + ' — ' + (tStr || '...');
+      var empEl = document.getElementById('f-emp');
+      if(empEl && empEl.selectedIndex >= 0){
+        var so = empEl.options[empEl.selectedIndex];
+        if(so && so.value && so.value!=='all') emp = (so.textContent||'').trim() || all;
+      }
+      var staEl = document.getElementById('f-status');
+      if(staEl && staEl.selectedIndex >= 0){
+        var so2 = staEl.options[staEl.selectedIndex];
+        if(so2 && so2.value && so2.value!=='all') sta = (so2.textContent||'').trim() || all;
+      }
+      var priEl = document.getElementById('f-priority');
+      if(priEl && priEl.selectedIndex >= 0){
+        var so3 = priEl.options[priEl.selectedIndex];
+        if(so3 && so3.value && so3.value!=='all') pri = (so3.textContent||'').trim() || all;
+      }
+    }catch(_e){}
+    return '<div class="tp-filters-bar">'
+         + '<span class="f-label">'+_esc(lblF)+'</span>'
+         + '<span class="chip chip-blue">'+_esc(lblPeriod+' '+period)+'</span>'
+         + '<span class="chip">'+_esc(lblEmp+' '+emp)+'</span>'
+         + '<span class="chip">'+_esc(lblSta+' '+sta)+'</span>'
+         + '<span class="chip">'+_esc(lblPri+' '+pri)+'</span>'
+         + '</div>';
+  }
+
+  /* ---------- 6 stat cards ------------------------------------------ */
   function _summaryCardsPro(rows, s){
-    var empCount = _countEmployees(rows);
-    var note = _isAr() ? 'نحتاج مراجعة فورية' : 'Needs review';
     var cards = [
-      { icon:'👥', label: _isAr()?'الموظفون'     :'Employees',   value: empCount,      color:'#a855f7' },
-      { icon:'⚠', label: _isAr()?'متأخرة'        :'Overdue',     value: s.late,        color:'#ef4444', highlight: s.late>0, note: s.late>0?note:'' },
-      { icon:'⏸', label: _isAr()?'مؤجلة'         :'Postponed',   value: s.postponed,   color:'#a855f7' },
-      { icon:'⏳', label: _isAr()?'انتظار'        :'Pending',     value: s.pending,     color:'#eab308' },
-      { icon:'🔄', label: _isAr()?'جارية'         :'In Progress', value: s.in_progress, color:'#f97316' },
-      { icon:'✅', label: _isAr()?'مكتملة'        :'Completed',   value: s.completed,   color:'#10b981' },
-      { icon:'📊', label: _isAr()?'إجمالي المهام' :'Total Tasks', value: s.total,       color:'#2563eb' }
+      { ic:'📋', lbl:_isAr()?'إجمالي المهام':'Total', lblEn:'TOTAL TASKS',  val:s.total,       c:'#2563eb' },
+      { ic:'✓',  lbl:_isAr()?'مكتملة':'Done',         lblEn:'COMPLETED',    val:s.completed,   c:'#10b981' },
+      { ic:'↻',  lbl:_isAr()?'جارية':'Active',        lblEn:'IN PROGRESS',  val:s.in_progress, c:'#f97316' },
+      { ic:'⌛', lbl:_isAr()?'انتظار':'Pending',      lblEn:'PENDING',      val:s.pending,     c:'#eab308' },
+      { ic:'‖',  lbl:_isAr()?'مؤجلة':'Postponed',     lblEn:'POSTPONED',    val:s.postponed,   c:'#a855f7' },
+      { ic:'!',  lbl:_isAr()?'متأخرة':'Overdue',      lblEn:'OVERDUE',      val:s.late,        c:'#ef4444', late:true }
     ];
-    var html = '<div class="tp-cards-row">';
+    var html = '<div class="tp-stats-grid">';
     cards.forEach(function(c){
-      html += '<div class="tp-card-mini' + (c.highlight ? ' tp-card-highlight' : '') + '" '
-            +   'style="border-top-color:'+c.color+'">'
-            + '<div class="tp-cm-icon" style="background:'+c.color+'">'+c.icon+'</div>'
-            + '<div class="tp-cm-label">'+_esc(c.label)+'</div>'
-            + '<div class="tp-cm-value" style="color:'+c.color+'">'+c.value+'</div>'
-            + (c.note ? '<div class="tp-cm-note">'+_esc(c.note)+'</div>' : '')
+      html += '<div class="tp-stat-card'+(c.late?' overdue':'')+'" style="border-top-color:'+c.c+'">'
+            +   '<div class="ic" style="background:'+c.c+'">'+_esc(c.ic)+'</div>'
+            +   '<div class="val">'+c.val+'</div>'
+            +   '<div class="lbl">'+_esc(c.lbl)+'</div>'
+            +   '<div class="lbl-en">'+_esc(c.lblEn)+'</div>'
             + '</div>';
     });
     html += '</div>';
     return html;
   }
+
+  /* ---------- 4 progress circles ----------------------------------- */
   function _progressCirclesRow(s){
     var total = s.total || 0;
     function pct(v){ return total > 0 ? Math.round(v * 100 / total) : 0; }
     var items = [
-      { label:_staLabel('postponed'),   pct:pct(s.postponed),   count:s.postponed,   color:'#a855f7' },
-      { label:_staLabel('pending'),     pct:pct(s.pending),     count:s.pending,     color:'#eab308' },
-      { label:_staLabel('in_progress'), pct:pct(s.in_progress), count:s.in_progress, color:'#f97316' },
-      { label:_staLabel('completed'),   pct:pct(s.completed),   count:s.completed,   color:'#10b981' }
+      { label:_staLabel('postponed'),   pct:pct(s.postponed),   count:s.postponed,   color:'#a855f7', bg:'#ede9fe', tc:'#7c3aed' },
+      { label:_staLabel('pending'),     pct:pct(s.pending),     count:s.pending,     color:'#eab308', bg:'#fef3c7', tc:'#a16207' },
+      { label:_staLabel('in_progress'), pct:pct(s.in_progress), count:s.in_progress, color:'#3b82f6', bg:'#dbeafe', tc:'#1e3a8a' },
+      { label:_staLabel('completed'),   pct:pct(s.completed),   count:s.completed,   color:'#10b981', bg:'#d1fae5', tc:'#047857' }
     ];
-    var html = '<div class="tp-circles-row">';
+    var html = '<div class="tp-progress-row">';
     items.forEach(function(it){
       html += '<div class="tp-pcircle">'
-            + _svgProgressCircle(it.pct, it.color, 84)
-            + '<div class="tp-pcircle-count">'+it.count+' '+(_isAr()?'مهام':'tasks')+'</div>'
-            + '<div class="tp-pcircle-label" '
-            +   'style="background:'+it.color+'22;color:'+it.color+'">'
-            +   _esc(it.label)+'</div>'
+            +   _svgProgressCircle(it.pct, it.color, 64)
+            +   '<div class="lbl-row" style="background:'+it.bg+';color:'+it.tc+'">'+_esc(it.label)+'</div>'
+            +   '<div class="ct">'+it.count+' '+(_isAr()?'مهام':'tasks')+'</div>'
             + '</div>';
     });
     html += '</div>';
     return html;
   }
+
+  /* ---------- Status bar chart + Priority donut --------------------- */
   function _distPanels(rows){
     var byS = _byStatus(rows);
     var byP = _byPriority(rows);
     var staItems = [
       { key:'completed',   label:_staLabel('completed'),   value:byS.completed,   color:'#10b981', ic:'✅' },
       { key:'in_progress', label:_staLabel('in_progress'), value:byS.in_progress, color:'#f97316', ic:'🔄' },
-      { key:'pending',     label:_staLabel('pending'),     value:byS.pending,     color:'#eab308', ic:'⏳' },
+      { key:'pending',     label:_staLabel('pending'),     value:byS.pending,     color:'#eab308', ic:'⌛' },
       { key:'postponed',   label:_staLabel('postponed'),   value:byS.postponed,   color:'#a855f7', ic:'⏸' },
-      { key:'cancelled',   label:_staLabel('cancelled'),   value:byS.cancelled,   color:'#ef4444', ic:'❌' }
+      { key:'cancelled',   label:_staLabel('cancelled'),   value:byS.cancelled,   color:'#ef4444', ic:'✕' }
     ];
     var maxV = Math.max(1, staItems.reduce(function(a,i){ return Math.max(a, i.value); }, 0));
     var staBars = '';
     staItems.forEach(function(it){
       var pct = (it.value / maxV) * 100;
-      staBars += '<div class="tp-hbar-row">'
-              + '<div class="tp-hbar-label"><span class="tp-ic">'+it.ic+'</span> '+_esc(it.label)+'</div>'
-              + '<div class="tp-hbar-track">'
-              +   '<div class="tp-hbar-fill" style="width:'+pct.toFixed(1)+'%;background:'+it.color+'"></div>'
-              + '</div>'
-              + '<div class="tp-hbar-val">'+it.value+'</div>'
+      staBars += '<div class="tp-bar-row">'
+              + '<div class="bn">'+_esc(it.label)+'</div>'
+              + '<div class="tp-bar-track"><div class="tp-bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+it.color+'"></div></div>'
+              + '<div class="bv" style="color:'+it.color+'">'+it.value+'</div>'
               + '</div>';
     });
-    var priSegments = [
-      { value:byP.urgent, color:'#ef4444', label:_priLabel('urgent') },
-      { value:byP.high,   color:'#f97316', label:_priLabel('high')   },
-      { value:byP.medium, color:'#eab308', label:_priLabel('medium') },
-      { value:byP.low,    color:'#22c55e', label:_priLabel('low')    }
+
+    var totalPri = (byP.urgent||0)+(byP.high||0)+(byP.medium||0)+(byP.low||0);
+    var priSegs = [
+      { value:byP.urgent, color:'#1e3a8a', label:_priLabel('urgent') },
+      { value:byP.high,   color:'#3b82f6', label:_priLabel('high')   },
+      { value:byP.medium, color:'#60a5fa', label:_priLabel('medium') },
+      { value:byP.low,    color:'#cbd5e1', label:_priLabel('low')    }
     ];
-    var donut = _svgDonut(priSegments, 130, 24);
+    var donut = _svgDonut(priSegs, 95, 16);
     var legend = '';
-    priSegments.forEach(function(seg){
-      legend += '<div class="tp-donut-leg-item">'
-              + '<span class="tp-swatch" style="background:'+seg.color+'"></span>'
-              + '<span>'+_esc(seg.label)+' <strong>('+seg.value+')</strong></span>'
+    priSegs.forEach(function(seg){
+      var p = totalPri>0 ? Math.round(seg.value*100/totalPri) : 0;
+      legend += '<div class="li">'
+              + '<span class="sw" style="background:'+seg.color+'"></span>'
+              + '<span class="nm">'+_esc(seg.label)+'</span>'
+              + '<span class="num" style="color:'+seg.color+'">'+seg.value+'</span>'
+              + '<span style="font-size:7pt;color:#94a3b8;font-weight:700">'+p+'%</span>'
               + '</div>';
     });
-    return '<div class="tp-dist-row">'
-         + '<div class="tp-chart-panel">'
-         +   '<div class="tp-chart-title">'
-         +     '<span class="tp-chart-icon" style="background:#10b981">📊</span>'
-         +     (_isAr()?'توزيع المهام حسب الحالة':'Tasks by Status')
+
+    return '<div class="tp-charts-row">'
+         + '<div class="tp-chart-card">'
+         +   '<div class="tp-chart-head">'
+         +     '<div class="ic" style="background:#10b981">📊</div>'
+         +     '<div>'
+         +       '<div class="tt">'+(_isAr()?'توزيع المهام حسب الحالة':'Tasks by Status')+'</div>'
+         +       '<div class="ss">'+(_isAr()?'نظرة شاملة على أقسام المهام':'Status overview')+'</div>'
+         +     '</div>'
          +   '</div>'
-         +   '<div class="tp-chart-subtitle">'+(_isAr()?'نظرة شاملة على أقسام المهام':'Status overview')+'</div>'
-         +   '<div class="tp-hbars">'+staBars+'</div>'
+         +   '<div class="tp-barchart">'+staBars+'</div>'
          + '</div>'
-         + '<div class="tp-chart-panel">'
-         +   '<div class="tp-chart-title">'
-         +     '<span class="tp-chart-icon" style="background:#f97316">🎯</span>'
-         +     (_isAr()?'توزيع المهام حسب الأولوية':'Tasks by Priority')
+         + '<div class="tp-chart-card">'
+         +   '<div class="tp-chart-head">'
+         +     '<div class="ic" style="background:#3b82f6">🎯</div>'
+         +     '<div>'
+         +       '<div class="tt">'+(_isAr()?'توزيع المهام حسب الأولوية':'Tasks by Priority')+'</div>'
+         +       '<div class="ss">'+(_isAr()?'تصنيف بحسب مستوى الأهمية':'By importance level')+'</div>'
+         +     '</div>'
          +   '</div>'
-         +   '<div class="tp-chart-subtitle">'+(_isAr()?'تصنيف المهام بحسب مستوى الأهمية':'Classification by priority')+'</div>'
-         +   '<div class="tp-donut-wrap">'+donut+'<div class="tp-donut-legend">'+legend+'</div></div>'
+         +   '<div class="tp-donut-wrap">'
+         +     '<div class="tp-donut-svg">'+donut
+         +       '<div class="tp-donut-center"><div class="l">'+(_isAr()?'إجمالي':'Total')+'</div><div class="v">'+totalPri+'</div></div>'
+         +     '</div>'
+         +     '<div class="tp-donut-legend">'+legend+'</div>'
+         +   '</div>'
          + '</div>'
          + '</div>';
   }
+
+  /* ---------- Employee tasks chart ---------------------------------- */
+  /* ---------- Employee tasks chart (SVG grouped bars) ---------------- */
   function _employeeChart(rows){
     var emps = _byEmployeeDetailed(rows);
     if(!emps.length) return '';
-    var maxTotal = Math.max(1, emps.reduce(function(a,e){ return Math.max(a, e.total); }, 0));
-    var legend =
-        '<div class="tp-emp-legend">'
-      +  '<span class="tp-leg"><span class="tp-swatch" style="background:#10b981"></span>'+_staLabel('completed')+'</span>'
-      +  '<span class="tp-leg"><span class="tp-swatch" style="background:#f97316"></span>'+_staLabel('in_progress')+'</span>'
-      +  '<span class="tp-leg"><span class="tp-swatch" style="background:#eab308"></span>'+_staLabel('pending')+'</span>'
-      +  '<span class="tp-leg"><span class="tp-swatch" style="background:#a855f7"></span>'+_staLabel('postponed')+'</span>'
-      + '</div>';
-    var bars = '';
+    if(_isAr()) emps = emps.slice().reverse();
+
+    var statuses = [
+      { key:'completed',   label:_staLabel('completed'),   color:'#10b981' },
+      { key:'in_progress', label:_staLabel('in_progress'), color:'#3b82f6' },
+      { key:'pending',     label:_staLabel('pending'),     color:'#eab308' },
+      { key:'postponed',   label:_staLabel('postponed'),   color:'#a855f7' }
+    ];
+
+    // Compute max across all bars
+    var maxVal = 0;
     emps.forEach(function(e){
-      var stacks = [
-        { count:e.completed,   color:'#10b981' },
-        { count:e.in_progress, color:'#f97316' },
-        { count:e.pending,     color:'#eab308' },
-        { count:e.postponed,   color:'#a855f7' }
-      ];
-      var segs = '';
-      stacks.forEach(function(st){
-        if(!st.count) return;
-        var h = (st.count / maxTotal) * 100;
-        segs += '<div class="tp-emp-bar-seg" style="height:'+h.toFixed(1)+'%;background:'+st.color+'">'
-              + (h > 12 ? st.count : '') + '</div>';
-      });
-      bars += '<div class="tp-emp-bar-col">'
-            + '<div class="tp-emp-bar-total">'+e.total+'</div>'
-            + '<div class="tp-emp-bar-stack">'+segs+'</div>'
-            + '<div class="tp-emp-bar-name">'+_esc(e.name)+'</div>'
-            + '</div>';
+      statuses.forEach(function(s){ maxVal = Math.max(maxVal, e[s.key]||0); });
     });
-    return '<div class="tp-emp-chart">'
-         + '<div class="tp-chart-title">'
-         +   '<span class="tp-chart-icon" style="background:#2563eb">👤</span>'
-         +   (_isAr()?'المهام المكتملة والمتبقية لكل موظف':'Tasks Completed & Remaining per Employee')
+    if(maxVal < 4) maxVal = 4;
+    if(maxVal % 2) maxVal++;
+    var yTicks = [0, Math.round(maxVal/4), Math.round(maxVal/2), Math.round(3*maxVal/4), maxVal];
+
+    // SVG dimensions
+    var W = 800, H = 260;
+    var pad = { top: 26, right: 70, bottom: 44, left: 24 };
+    var cw = W - pad.left - pad.right;
+    var ch = H - pad.top - pad.bottom;
+
+    var groupW = cw / emps.length;
+    var barW = Math.max(14, Math.min(30, (groupW - 24) / statuses.length));
+    var barGap = 4;
+    var totalBarsW = barW * statuses.length + barGap * (statuses.length - 1);
+    var groupStartOffset = (groupW - totalBarsW) / 2;
+
+    var svg = '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">';
+
+    // Grid lines + Y-axis labels (right side for RTL)
+    yTicks.forEach(function(t){
+      var y = pad.top + ch - (t/maxVal)*ch;
+      svg += '<line x1="'+pad.left+'" y1="'+y+'" x2="'+(W-pad.right)+'" y2="'+y+'" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3"/>';
+      svg += '<text x="'+(W-pad.right+8)+'" y="'+(y+4)+'" font-family="Inter,Tajawal" font-size="11" fill="#94a3b8" font-weight="700">'+t+'</text>';
+    });
+
+    // Y-axis title (vertical)
+    var yTitleX = W - pad.right + 50;
+    var yTitleY = pad.top + ch/2;
+    svg += '<text x="'+yTitleX+'" y="'+yTitleY+'" font-family="Tajawal,Cairo" font-size="10" fill="#64748b" font-weight="700" text-anchor="middle" transform="rotate(90 '+yTitleX+' '+yTitleY+')">'+(_isAr()?'عدد المهام':'Task count')+'</text>';
+
+    // Bars per employee
+    emps.forEach(function(e, ei){
+      var groupX = pad.left + ei * groupW + groupStartOffset;
+      statuses.forEach(function(s, si){
+        var v = e[s.key] || 0;
+        if(v <= 0) return;
+        var pct = e.total > 0 ? Math.round(v*100/e.total) : 0;
+        var bx = groupX + si * (barW + barGap);
+        var bh = (v/maxVal)*ch;
+        var by = pad.top + ch - bh;
+        svg += '<rect x="'+bx+'" y="'+by+'" width="'+barW+'" height="'+bh+'" fill="'+s.color+'" rx="2"/>';
+        var labelY = Math.max(by - 6, pad.top + 8);
+        svg += '<text x="'+(bx+barW/2)+'" y="'+labelY+'" font-family="Inter,Tajawal" font-size="10" font-weight="800" fill="'+s.color+'" text-anchor="middle">'+v+' ('+pct+'%)</text>';
+      });
+      // Employee name below x-axis
+      svg += '<text x="'+(groupX + totalBarsW/2)+'" y="'+(pad.top + ch + 24)+'" font-family="Tajawal,Cairo" font-size="11" font-weight="800" fill="#1e293b" text-anchor="middle">'+_esc(e.name)+'</text>';
+    });
+
+    // X-axis line
+    svg += '<line x1="'+pad.left+'" y1="'+(pad.top + ch)+'" x2="'+(W-pad.right)+'" y2="'+(pad.top + ch)+'" stroke="#cbd5e1" stroke-width="1.5"/>';
+
+    svg += '</svg>';
+
+    // Legend strip (centered at top)
+    var legend = '<div class="tp-emp-legend">';
+    statuses.forEach(function(s){
+      legend += '<span class="li"><span class="sw" style="background:'+s.color+'"></span>'+_esc(s.label)+'</span>';
+    });
+    legend += '</div>';
+
+    return '<div class="tp-emp-card">'
+         + '<div class="tp-chart-head">'
+         +   '<div class="ic" style="background:#10b981">📊</div>'
+         +   '<div style="flex:1">'
+         +     '<div class="tt">'+(_isAr()?'المهام المكتملة والمتبقية لكل موظف':'Tasks Completed & Remaining per Employee')+'</div>'
+         +     '<div class="ss">'+(_isAr()?'توزيع حالات المهام على الفريق':'Status distribution per team member')+'</div>'
+         +   '</div>'
          + '</div>'
-         + '<div class="tp-chart-subtitle">'+(_isAr()?'توزيع حسب الموظف على القسم':'Per-employee distribution')+'</div>'
          + legend
-         + '<div class="tp-emp-bars">'+bars+'</div>'
+         + '<div class="tp-emp-svg">'+svg+'</div>'
          + '</div>';
   }
+
+  /* ---------- Tasks Table -------------------------------------------- */
   function _tasksTablePro(rows){
     var headers = _isAr()
-      ? ['#','المهمة','المكلف','الأولوية','الحالة','تاريخ البدء','الموعد النهائي','التقدم']
-      : ['#','Task','Assignee','Priority','Status','Start Date','Deadline','Progress'];
-    var html = '<table class="tp-tasks-pro">'
+      ? ['#','المهمة','المكلف','الإدارة','الحالة','الأولوية','البدء','النهائي','الإنجاز']
+      : ['#','Task','Assignee','Department','Status','Priority','Start','Deadline','Progress'];
+    var EMP_COLORS = ['#3b82f6','#a855f7','#10b981','#f97316','#ec4899','#0ea5e9','#eab308','#14b8a6'];
+    var html = '<div class="tp-tbl-wrap"><table class="tp-tasks-pro">'
              + '<colgroup>'
-             +   '<col style="width:4%"><col style="width:26%"><col style="width:14%">'
-             +   '<col style="width:9%"><col style="width:10%"><col style="width:9%">'
-             +   '<col style="width:11%"><col style="width:17%">'
+             +   '<col style="width:3.5%"><col style="width:22%"><col style="width:14%"><col style="width:10%">'
+             +   '<col style="width:11%"><col style="width:9%"><col style="width:9%">'
+             +   '<col style="width:10%"><col style="width:11.5%">'
              + '</colgroup>'
              + '<thead><tr>';
-    headers.forEach(function(h){ html += '<th>'+_esc(h)+'</th>'; });
+    headers.forEach(function(h, i){
+      var cls = (i===0 || i>=4) ? ' class="c"' : '';
+      html += '<th'+cls+'>'+_esc(h)+'</th>';
+    });
     html += '</tr></thead><tbody>';
     if(!rows.length){
-      html += '<tr><td colspan="8" class="tp-empty">'
-            + _esc(_isAr()?'لا توجد مهام لعرضها':'No tasks to display')+'</td></tr>';
+      html += '<tr><td colspan="9" class="tp-empty">'+_esc(_isAr()?'لا توجد مهام لعرضها':'No tasks to display')+'</td></tr>';
     } else {
       rows.forEach(function(r, i){
         var st = r._userStatus || 'pending';
         var pri = r.priority || 'medium';
         var prog = (typeof r._effectiveProgress==='number') ? r._effectiveProgress : (Number(r.progress)||0);
+        var name = _userName(r._displayUser);
         var dept = _userDept(r._displayUser);
-        var late = r._late;
-        var prFill = prog >= 70 ? '#10b981' : prog >= 40 ? '#f59e0b' : '#ef4444';
-        html += '<tr>'
-              + '<td class="tp-task-num">'+(i+1)+'</td>'
-              + '<td class="tp-task-title-cell">'
-              +   (r.serial ? '<span class="tp-task-serial">'+_esc(r.serial)+'</span>' : '')
-              +   '<strong>'+_esc(r.title || '—')+'</strong>'
+        var late = !!r._late;
+        var prFill = prog >= 70 ? '#10b981' : prog >= 40 ? '#f97316' : prog >= 1 ? '#eab308' : '#cbd5e1';
+        var parts = String(name||'').trim().split(/\s+/);
+        var initials = ((parts[0]||'').charAt(0) + (parts[1]||parts[0]||'').charAt(0)).toUpperCase() || '??';
+        var empColor = EMP_COLORS[(r._displayUser||0) % EMP_COLORS.length];
+        var serialStr = (r.serial != null && r.serial !== '' && r.serial !== 0) ? String(r.serial) : '';
+        var serialHtml = serialStr ? '<span class="tp-task-serial">#'+_esc(serialStr)+'</span>' : '';
+        html += '<tr'+(late?' class="late"':'')+'>'
+              + '<td class="c"><span class="tp-task-num">'+String(i+1).padStart(2,'0')+'</span></td>'
+              + '<td>'
+              +   '<div class="tp-task-title">'+serialHtml+_esc(r.title || '—')+'</div>'
+              +   (r.description ? '<div class="tp-task-desc">'+_esc(String(r.description).slice(0,90))+'</div>' : '')
               + '</td>'
-              + '<td>'+_esc(_userName(r._displayUser))
-              +   (dept ? '<div class="tp-task-dept">'+_esc(dept)+'</div>' : '')
-              + '</td>'
-              + '<td><span class="tp-pill tp-pill-pri-'+pri+'">'+_esc(_priLabel(pri))+'</span></td>'
-              + '<td><span class="tp-pill tp-pill-sta-'+st+'">'+_esc(_staLabel(st))+'</span></td>'
-              + '<td>'+_esc(_fmtDate(r.startDate||r.createdAt))+'</td>'
-              + '<td'+(late?' class="tp-deadline-late"':'')+'>'+_esc(_fmtDate(r.deadline))+'</td>'
+              + '<td><div class="tp-emp-cell"><span class="ec" style="background:'+empColor+'">'+_esc(initials)+'</span><span class="nm">'+_esc(name)+'</span></div></td>'
+              + '<td><span class="tp-task-dept">'+_esc(dept || '—')+'</span></td>'
+              + '<td class="c"><span class="tp-pill tp-pill-sta-'+st+'">'+_esc(_staLabel(st))+'</span></td>'
+              + '<td class="c"><span class="tp-pill tp-pill-pri-'+pri+'">'+_esc(_priLabel(pri))+'</span></td>'
+              + '<td class="c"><span class="tp-task-date">'+_esc(_fmtDate(r.startDate||r.createdAt))+'</span></td>'
+              + '<td class="c"><span class="tp-task-date'+(late?' tp-deadline-late':'')+'">'+_esc(_fmtDate(r.deadline))+'</span></td>'
               + '<td>'
               +   '<div class="tp-progress-mini">'
-              +     '<div class="tp-progress-mini-bar">'
-              +       '<div class="tp-progress-mini-fill" style="width:'+prog+'%;background:'+prFill+'"></div>'
-              +     '</div>'
-              +     '<span class="tp-progress-mini-pct">'+prog+'%</span>'
+              +     '<div class="tp-progress-mini-bar"><div class="tp-progress-mini-fill" style="width:'+prog+'%;background:'+prFill+'"></div></div>'
+              +     '<span class="tp-progress-mini-pct" style="color:'+prFill+'">'+prog+'%</span>'
               +   '</div>'
               + '</td>'
               + '</tr>';
       });
     }
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     return html;
   }
 
-  /* ---------- build full report ---------------------------------------- */
+  function _tableSummary(s){
+    var items = [
+      { v:s.total,       l:_isAr()?'إجمالي':'Total',       c:'#2563eb' },
+      { v:s.completed,   l:_isAr()?'مكتملة':'Done',        c:'#10b981' },
+      { v:s.in_progress, l:_isAr()?'جارية':'Active',       c:'#f97316' },
+      { v:s.pending,     l:_isAr()?'انتظار':'Pending',     c:'#eab308' },
+      { v:s.postponed,   l:_isAr()?'مؤجلة':'Postponed',    c:'#a855f7' },
+      { v:s.late,        l:_isAr()?'متأخرة':'Overdue',     c:'#ef4444' }
+    ];
+    var html = '<div class="tp-tbl-summary">';
+    items.forEach(function(it){
+      html += '<div class="it"><div class="v" style="color:'+it.c+'">'+it.v+'</div><div class="l">'+_esc(it.l)+'</div></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  /* ---------- Section title helper ---------------------------------- */
+  function _sectionTitle(ar, en){
+    return '<div class="tp-section-title">'
+         + '<span class="bar"></span>'
+         + '<span>'+_esc(ar)+'</span>'
+         + '<span class="en">'+_esc(en)+'</span>'
+         + '</div>';
+  }
+
+  /* ---------- Build full report ------------------------------------- */
   function _buildReport(page){
     var rows = _gatherTasksForPage(page);
     var s = _summary(rows);
     var titleMap = {
-      mgr:   _isAr() ? '📊 لوحة البيانات — منصة تانيا'   : '📊 Dashboard Report — Tania',
-      emp:   _isAr() ? '📋 تقرير الموظف — منصة تانيا'   : '📋 Employee Report — Tania',
-      admin: _isAr() ? '🛡️ تقرير الإدارة — منصة تانيا' : '🛡️ Admin Report — Tania'
+      mgr:   _isAr() ? 'تقرير لوحة بيانات المهام'  : 'Tasks Dashboard Report',
+      emp:   _isAr() ? 'تقرير مهامي'                : 'My Tasks Report',
+      admin: _isAr() ? 'تقرير لوحة الإدارة'         : 'Admin Dashboard Report'
+    };
+    var subtitleMap = {
+      mgr:   'DASHBOARD REPORT',
+      emp:   'EMPLOYEE TASKS REPORT',
+      admin: 'ADMIN OVERVIEW REPORT'
     };
     var title = titleMap[page] || titleMap.mgr;
+    var subtitle = subtitleMap[page] || subtitleMap.mgr;
+
     var p1 = '<div class="tp-page tp-page-1">'
-           +   _hdr(title)
+           +   _hdr(title, subtitle)
+           +   _filtersBar()
+           +   _sectionTitle(_isAr()?'البطاقات الإحصائية':'Statistical Cards', 'STATISTICAL OVERVIEW')
            +   _summaryCardsPro(rows, s)
+           +   _sectionTitle(_isAr()?'نسب الإنجاز حسب الحالة':'Completion Rates by Status', 'PROGRESS BY STATUS')
            +   _progressCirclesRow(s)
+           +   _sectionTitle(_isAr()?'الرسوم البيانية':'Charts', 'STATUS & PRIORITY')
            +   _distPanels(rows)
-           +   ((page==='mgr'||page==='admin') ? _employeeChart(rows) : '')
+           +   _employeeChart(rows)
            +   _footer(1, 2)
            + '</div>';
+
+    var titleP2 = _isAr() ? 'جدول تفاصيل المهام' : 'Detailed Tasks Table';
     var p2 = '<div class="tp-page tp-page-2">'
-           +   _hdr(title)
-           +   '<section class="tp-section">'
-           +     '<h2 class="tp-section-title">📋 '+(_isAr()?'قائمة المهام التفصيلية':'Detailed Task List')+'</h2>'
-           +     _tasksTablePro(rows)
-           +   '</section>'
+           +   _hdr(titleP2, 'TASKS DETAIL TABLE')
+           +   _filtersBar()
+           +   _sectionTitle(_isAr()?'قائمة المهام التفصيلية':'Detailed Task List', _isAr()?'TOTAL: '+rows.length:'TOTAL: '+rows.length)
+           +   _tasksTablePro(rows)
+           +   _tableSummary(s)
            +   _footer(2, 2)
            + '</div>';
     return p1 + p2;
   }
+
 
   /* ---------- DOM mount + print orchestration -------------------------- */
   function _ensureRoot(){
