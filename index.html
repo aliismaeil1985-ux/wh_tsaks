@@ -578,9 +578,9 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
 
 <style id="tania-print-styles">
 /* ================================================================
-   Tania universal print system v24 — pure @media print + SVG charts
-   Page 1 = Dashboard view (cards, donuts, bars, employee chart)
-   Page 2 = Professional task table
+   Tania universal print system v25 — auto-engages on ANY print
+   (Ctrl+P, browser menu, or the in-app print button — all work).
+   Page 1 = dashboard view  ·  Page 2 = professional task table
    ================================================================ */
 #tania-print-root{ display:none; }
 @media screen{ #tania-print-root{ display:none !important; } }
@@ -588,15 +588,25 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
 @media print{
   @page{ size:A4 portrait; margin:12mm; }
 
-  html, body{
+  /* CRITICAL: only hide app content when body is marked "tania-printing"
+     (the JS adds this class in beforeprint, removes it in afterprint).
+     This means Ctrl+P also triggers our system, not just printApp(). */
+  body.tania-printing{
     background:#fff !important; margin:0 !important; padding:0 !important;
     -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;
     color:#0f172a !important;
     font-family:"Segoe UI", Tahoma, "Tajawal", Arial, sans-serif !important;
     font-size:10pt;
   }
-  body > *{ display:none !important; }
-  body > #tania-print-root{ display:block !important; }
+  body.tania-printing > *{ display:none !important; }
+  body.tania-printing > #tania-print-root{ display:block !important; }
+
+  /* Belt-and-suspenders: also force everything inside the print root
+     to print colors exactly as designed */
+  #tania-print-root, #tania-print-root *{
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
 
   /* Hide all interactive controls inside the print root */
   #tania-print-root button, #tania-print-root .btn, #tania-print-root .pbtn,
@@ -608,30 +618,29 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   .tp-page{ page-break-after:always; break-after:page; }
   .tp-page:last-child{ page-break-after:auto; break-after:auto; }
 
-  /* ===== Header (compact, matches dashboard) ===== */
+  /* ===== Header ===== */
   .tp-header{
     display:flex; align-items:center; justify-content:space-between;
     gap:10px; padding:8px 12px; margin-bottom:10px;
-    background:linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
-    color:#fff; border-radius:10px;
+    background:linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
+    color:#fff !important; border-radius:10px;
   }
   .tp-header .tp-logo{
     width:42px; height:42px; border-radius:10px;
-    background:rgba(255,255,255,.2); color:#fff;
+    background:rgba(255,255,255,.2) !important; color:#fff !important;
     display:flex; align-items:center; justify-content:center;
     font-weight:900; font-size:18px; flex-shrink:0;
     border:2px solid rgba(255,255,255,.4);
   }
   .tp-header .tp-title{
     flex:1; text-align:center;
-    font-size:14pt; font-weight:800; color:#fff;
-    text-shadow:0 1px 2px rgba(0,0,0,.15);
+    font-size:14pt; font-weight:800; color:#fff !important;
   }
   .tp-header .tp-meta{
-    text-align:end; font-size:8.5pt; color:rgba(255,255,255,.9);
+    text-align:end; font-size:8.5pt; color:rgba(255,255,255,.95) !important;
     line-height:1.5; min-width:130px;
   }
-  .tp-header .tp-meta strong{ color:#fff; font-weight:700; }
+  .tp-header .tp-meta strong{ color:#fff !important; font-weight:700; }
 
   /* ===== 7 summary cards row ===== */
   .tp-cards-row{
@@ -642,29 +651,28 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   .tp-card-mini{
     border:1px solid #e2e8f0; border-top-width:3px;
     border-radius:8px; padding:7px 5px; text-align:center;
-    background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.04);
+    background:#fff !important; box-shadow:0 1px 2px rgba(0,0,0,.04);
     page-break-inside:avoid; break-inside:avoid;
-    position:relative;
   }
   .tp-card-mini.tp-card-highlight{
-    background:linear-gradient(180deg,#fef2f2 0%,#ffffff 100%);
+    background:linear-gradient(180deg,#fef2f2 0%,#ffffff 100%) !important;
     border-color:#ef4444;
   }
   .tp-card-mini .tp-cm-icon{
     width:26px; height:26px; border-radius:50%;
-    margin:0 auto 4px; color:#fff;
+    margin:0 auto 4px; color:#fff !important;
     display:flex; align-items:center; justify-content:center;
     font-size:11pt; font-weight:900;
   }
   .tp-card-mini .tp-cm-label{
-    font-size:7.5pt; color:#64748b; font-weight:700;
+    font-size:7.5pt; color:#64748b !important; font-weight:700;
     margin-bottom:2px; line-height:1.2;
   }
   .tp-card-mini .tp-cm-value{
     font-size:18pt; font-weight:900; line-height:1;
   }
   .tp-card-mini .tp-cm-note{
-    font-size:6.5pt; color:#dc2626; font-weight:700;
+    font-size:6.5pt; color:#dc2626 !important; font-weight:700;
     margin-top:2px; line-height:1.1;
   }
 
@@ -672,13 +680,13 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   .tp-circles-row{
     display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;
     padding:10px 14px; margin:10px 0;
-    background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;
+    background:#f8fafc !important; border:1px solid #e2e8f0; border-radius:10px;
     page-break-inside:avoid; break-inside:avoid;
   }
   .tp-pcircle{ text-align:center; }
   .tp-pcircle svg{ display:block; margin:0 auto; }
   .tp-pcircle-count{
-    font-size:8pt; color:#64748b; margin-top:2px;
+    font-size:8pt; color:#64748b !important; margin-top:2px;
   }
   .tp-pcircle-label{
     display:inline-block; margin-top:4px; padding:2px 10px;
@@ -692,21 +700,21 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   }
   .tp-chart-panel{
     border:1px solid #e2e8f0; border-radius:10px;
-    padding:10px 12px; background:#fff;
+    padding:10px 12px; background:#fff !important;
     box-shadow:0 1px 3px rgba(0,0,0,.04);
     page-break-inside:avoid; break-inside:avoid;
   }
   .tp-chart-title{
     display:flex; align-items:center; gap:6px;
-    font-size:10pt; font-weight:800; color:#1e293b; margin-bottom:2px;
+    font-size:10pt; font-weight:800; color:#1e293b !important; margin-bottom:2px;
   }
   .tp-chart-title .tp-chart-icon{
     width:22px; height:22px; border-radius:6px;
     display:inline-flex; align-items:center; justify-content:center;
-    color:#fff; font-size:10pt;
+    color:#fff !important; font-size:10pt;
   }
   .tp-chart-subtitle{
-    font-size:7.5pt; color:#94a3b8; margin-bottom:8px;
+    font-size:7.5pt; color:#94a3b8 !important; margin-bottom:8px;
   }
   .tp-hbars{ padding:4px 0; }
   .tp-hbar-row{
@@ -714,18 +722,17 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
     align-items:center; gap:6px; padding:3px 0;
   }
   .tp-hbar-label{
-    font-size:8.5pt; font-weight:700; color:#475569;
+    font-size:8.5pt; font-weight:700; color:#475569 !important;
     display:flex; align-items:center; gap:4px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .tp-hbar-label .tp-ic{ font-size:9pt; }
   .tp-hbar-track{
-    height:10px; background:#f1f5f9; border-radius:5px;
+    height:10px; background:#f1f5f9 !important; border-radius:5px;
     overflow:hidden; border:1px solid #e2e8f0;
   }
   .tp-hbar-fill{ height:100%; border-radius:5px; }
   .tp-hbar-val{
-    text-align:end; font-size:9pt; font-weight:800; color:#1e293b;
+    text-align:end; font-size:9pt; font-weight:800; color:#1e293b !important;
     font-variant-numeric:tabular-nums;
   }
   .tp-donut-wrap{
@@ -737,28 +744,27 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   }
   .tp-donut-leg-item{
     display:flex; align-items:center; gap:6px;
-    font-size:8.5pt; color:#334155; font-weight:600;
+    font-size:8.5pt; color:#334155 !important; font-weight:600;
   }
   .tp-swatch{
     display:inline-block; width:10px; height:10px; border-radius:2px;
     border:1px solid rgba(0,0,0,.1); flex-shrink:0;
   }
 
-  /* ===== Employee chart (vertical bars) ===== */
+  /* ===== Employee chart ===== */
   .tp-emp-chart{
     border:1px solid #e2e8f0; border-radius:10px;
-    padding:10px 14px; background:#fff;
+    padding:10px 14px; background:#fff !important;
     box-shadow:0 1px 3px rgba(0,0,0,.04);
     margin:10px 0;
     page-break-inside:avoid; break-inside:avoid;
   }
   .tp-emp-legend{
-    display:flex; flex-wrap:wrap; gap:10px;
-    margin:6px 0 4px;
+    display:flex; flex-wrap:wrap; gap:10px; margin:6px 0 4px;
   }
   .tp-leg{
     display:flex; align-items:center; gap:5px;
-    font-size:8pt; font-weight:700; color:#475569;
+    font-size:8pt; font-weight:700; color:#475569 !important;
   }
   .tp-emp-bars{
     display:flex; align-items:flex-end; justify-content:space-around;
@@ -776,38 +782,38 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
     display:flex; flex-direction:column-reverse;
     justify-content:flex-end;
     border-radius:4px 4px 0 0; overflow:hidden;
-    background:#f1f5f9; border:1px solid #e2e8f0;
+    background:#f1f5f9 !important; border:1px solid #e2e8f0;
   }
   .tp-emp-bar-seg{
     width:100%; min-height:1px;
     display:flex; align-items:center; justify-content:center;
-    color:#fff; font-size:7.5pt; font-weight:800;
+    color:#fff !important; font-size:7.5pt; font-weight:800;
   }
   .tp-emp-bar-name{
-    font-size:8pt; font-weight:700; color:#334155;
+    font-size:8pt; font-weight:700; color:#334155 !important;
     margin-top:6px; text-align:center; line-height:1.2;
     max-width:80px; word-wrap:break-word;
   }
   .tp-emp-bar-total{
     position:absolute; top:-14px; left:50%; transform:translateX(-50%);
-    font-size:8pt; font-weight:800; color:#0f172a;
-    background:#fff; padding:0 4px; border-radius:3px;
+    font-size:8pt; font-weight:800; color:#0f172a !important;
+    background:#fff !important; padding:0 4px; border-radius:3px;
   }
 
-  /* ===== Footer (per page) ===== */
+  /* ===== Footer ===== */
   .tp-footer{
     margin-top:8px; padding-top:5px;
     border-top:1px dashed #cbd5e1;
     display:flex; justify-content:space-between;
-    font-size:7.5pt; color:#94a3b8;
+    font-size:7.5pt; color:#94a3b8 !important;
   }
 
-  /* ===== Page 2 — Professional task table ===== */
+  /* ===== Page 2 — professional task table ===== */
   .tp-section{ margin:8px 0; }
   .tp-section-title{
-    font-size:11pt; font-weight:800; color:#1e293b;
+    font-size:11pt; font-weight:800; color:#1e293b !important;
     padding:6px 10px; margin:0 0 10px;
-    background:linear-gradient(90deg,#eff6ff 0%, #ffffff 100%);
+    background:linear-gradient(90deg,#eff6ff 0%, #ffffff 100%) !important;
     border-inline-start:4px solid #2563eb; border-radius:4px;
   }
   .tp-tasks-pro{
@@ -819,11 +825,10 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   .tp-tasks-pro thead{ display:table-header-group; }
   .tp-tasks-pro tfoot{ display:table-footer-group; }
   .tp-tasks-pro thead th{
-    background:linear-gradient(180deg, #1e3a8a 0%, #1e293b 100%);
+    background:linear-gradient(180deg, #1e3a8a 0%, #1e293b 100%) !important;
     color:#fff !important; font-weight:800;
     padding:8px 6px; text-align:start; font-size:8.5pt;
     border-bottom:2px solid #0f172a;
-    text-transform:none; letter-spacing:.2px;
   }
   .tp-tasks-pro tbody tr{
     page-break-inside:avoid; break-inside:avoid;
@@ -831,26 +836,27 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   .tp-tasks-pro tbody td{
     padding:7px 6px; border-bottom:1px solid #e2e8f0;
     vertical-align:middle; word-wrap:break-word; overflow-wrap:anywhere;
+    background:#fff !important;
   }
-  .tp-tasks-pro tbody tr:nth-child(even) td{ background:#f8fafc; }
+  .tp-tasks-pro tbody tr:nth-child(even) td{ background:#f8fafc !important; }
   .tp-tasks-pro tbody tr:last-child td{ border-bottom:none; }
 
   .tp-tasks-pro .tp-task-num{
-    text-align:center; font-weight:800; color:#64748b;
+    text-align:center; font-weight:800; color:#64748b !important;
     font-variant-numeric:tabular-nums;
   }
   .tp-tasks-pro .tp-task-title-cell strong{
-    display:block; font-weight:700; color:#0f172a; line-height:1.3;
+    display:block; font-weight:700; color:#0f172a !important; line-height:1.3;
   }
   .tp-task-serial{
-    display:inline-block; font-family:"Lobster",monospace;
-    background:#eef2ff; color:#4338ca;
+    display:inline-block; font-family:monospace;
+    background:#eef2ff !important; color:#4338ca !important;
     padding:1px 6px; border-radius:4px;
     font-size:7.5pt; font-weight:700;
     margin-inline-end:4px;
   }
   .tp-task-dept{
-    display:block; font-size:7.5pt; color:#94a3b8;
+    display:block; font-size:7.5pt; color:#94a3b8 !important;
     margin-top:2px;
   }
 
@@ -859,42 +865,38 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
     font-size:7.5pt; font-weight:800; line-height:1.4;
     border:1px solid currentColor; white-space:nowrap;
   }
-  .tp-pill-pri-urgent { background:rgba(239,68,68,.12);  color:#b91c1c; }
-  .tp-pill-pri-high   { background:rgba(249,115,22,.12); color:#c2410c; }
-  .tp-pill-pri-medium { background:rgba(234,179,8,.15);  color:#a16207; }
-  .tp-pill-pri-low    { background:rgba(34,197,94,.12);  color:#15803d; }
-  .tp-pill-sta-pending     { background:rgba(148,163,184,.18); color:#475569; }
-  .tp-pill-sta-in_progress { background:rgba(249,115,22,.12);  color:#c2410c; }
-  .tp-pill-sta-completed   { background:rgba(16,185,129,.14);  color:#047857; }
-  .tp-pill-sta-postponed   { background:rgba(168,85,247,.12);  color:#7c3aed; }
-  .tp-pill-sta-cancelled   { background:rgba(100,116,139,.15); color:#475569; }
+  .tp-pill-pri-urgent { background:rgba(239,68,68,.12) !important;  color:#b91c1c !important; }
+  .tp-pill-pri-high   { background:rgba(249,115,22,.12) !important; color:#c2410c !important; }
+  .tp-pill-pri-medium { background:rgba(234,179,8,.15) !important;  color:#a16207 !important; }
+  .tp-pill-pri-low    { background:rgba(34,197,94,.12) !important;  color:#15803d !important; }
+  .tp-pill-sta-pending     { background:rgba(148,163,184,.18) !important; color:#475569 !important; }
+  .tp-pill-sta-in_progress { background:rgba(249,115,22,.12) !important;  color:#c2410c !important; }
+  .tp-pill-sta-completed   { background:rgba(16,185,129,.14) !important;  color:#047857 !important; }
+  .tp-pill-sta-postponed   { background:rgba(168,85,247,.12) !important;  color:#7c3aed !important; }
+  .tp-pill-sta-cancelled   { background:rgba(100,116,139,.15) !important; color:#475569 !important; }
 
-  .tp-tasks-pro .tp-deadline-late{
-    color:#b91c1c; font-weight:800;
-  }
+  .tp-tasks-pro .tp-deadline-late{ color:#b91c1c !important; font-weight:800; }
   .tp-tasks-pro .tp-deadline-late::before{ content:"⚠ "; }
 
-  .tp-progress-mini{
-    display:flex; align-items:center; gap:6px;
-  }
+  .tp-progress-mini{ display:flex; align-items:center; gap:6px; }
   .tp-progress-mini-bar{
-    flex:1; height:6px; background:#e2e8f0;
+    flex:1; height:6px; background:#e2e8f0 !important;
     border-radius:3px; overflow:hidden;
     border:1px solid #cbd5e1;
   }
   .tp-progress-mini-fill{ height:100%; border-radius:3px; }
   .tp-progress-mini-pct{
-    font-size:8.5pt; font-weight:800; color:#1e293b;
+    font-size:8.5pt; font-weight:800; color:#1e293b !important;
     min-width:32px; text-align:end;
     font-variant-numeric:tabular-nums;
   }
 
   .tp-empty{
-    text-align:center; color:#94a3b8;
+    text-align:center; color:#94a3b8 !important;
     padding:20px; font-size:9pt; font-style:italic;
   }
 
-  /* Optional grayscale mode (printSettings.printBW) */
+  /* Optional grayscale mode */
   #tania-print-root.tp-bw,
   #tania-print-root.tp-bw *{
     filter:grayscale(100%) !important;
@@ -954,7 +956,7 @@ p.style.cssText='position:absolute;bottom:-10px;left:'+x+'%;width:'+size+'px;hei
 pContainer.appendChild(p);
 setTimeout(function(){if(p.parentNode)p.parentNode.removeChild(p);},dur*1000);
 }
-/* === perf-v1: halve particle rate (200->400ms) === */
+/* === perf-v1 === */
 var pInterval=setInterval(createParticle,400);
 var splashDone = false;
 function dismissSplash(){
@@ -974,7 +976,7 @@ document.addEventListener('touchstart', dismissSplash, {once:true, passive:true}
 document.addEventListener('keydown', dismissSplash, {once:true});
 var hint = document.getElementById('splash-hint');
 if(hint){ hint.style.transition='opacity 0.8s'; hint.style.opacity='1'; }
-/* === perf-v1: auto-dismiss splash after 1.5s of inactivity === */
+/* === perf-v1 === */
 setTimeout(dismissSplash, 1500);
 }, 1000);
 })();</script> <button id="login-lang-btn" onclick="toggleLang()" style="position:fixed;top:18px;left:18px;z-index:9000;padding:8px 16px;font-size:13px;font-weight:800;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;border:none;border-radius:10px;cursor:pointer;box-shadow:0 4px 12px rgba(59,130,246,.3);font-family:'Almarai',sans-serif">EN</button>
@@ -3382,7 +3384,7 @@ await db_fire.collection('login_audit').add(entry);
 }catch(e){ try{ console.warn('login_audit:', e&&e.message||e); }catch(_e){} }
 }
 
-/* === v24: Tania universal print system — SVG charts + professional table === */
+/* === v25: Tania universal print system — Ctrl+P aware (auto-engages on any print) === */
 (function(){
   'use strict';
 
@@ -3455,7 +3457,14 @@ await db_fire.collection('login_audit').add(entry);
     if(vis(document.getElementById('pg-mgr')))   return 'mgr';
     if(vis(document.getElementById('pg-emp')))   return 'emp';
     if(vis(document.getElementById('pg-admin'))) return 'admin';
-    return null;
+    /* fallback when called BEFORE login or while modals cover the page:
+       choose role from current user if available */
+    if(window.CU && CU.role){
+      if(CU.role==='admin')    return 'admin';
+      if(CU.role==='manager')  return 'mgr';
+      return 'emp';
+    }
+    return 'mgr'; /* last-resort default so beforeprint still produces output */
   }
   function _getEffectiveStatus(t, uid){
     try{ if(uid!=null && typeof getTaskStatusForUser==='function'){
@@ -3547,33 +3556,51 @@ await db_fire.collection('login_audit').add(entry);
   }
 
   /* ---------- SVG chart builders --------------------------------------- */
+  /* Path-based donut: works in every SVG renderer (Chrome, Safari, Firefox,
+     WeasyPrint, Edge). Builds arc commands directly — no stroke-dasharray. */
+  function _arcPath(cx, cy, rOuter, rInner, startAngle, endAngle){
+    /* Returns an SVG path "d" for a donut wedge between two angles (radians) */
+    var sweep = endAngle - startAngle;
+    var largeArc = sweep > Math.PI ? 1 : 0;
+    var x1o = cx + rOuter * Math.cos(startAngle), y1o = cy + rOuter * Math.sin(startAngle);
+    var x2o = cx + rOuter * Math.cos(endAngle),   y2o = cy + rOuter * Math.sin(endAngle);
+    var x1i = cx + rInner * Math.cos(endAngle),   y1i = cy + rInner * Math.sin(endAngle);
+    var x2i = cx + rInner * Math.cos(startAngle), y2i = cy + rInner * Math.sin(startAngle);
+    return 'M'+x1o.toFixed(2)+','+y1o.toFixed(2)
+         + ' A'+rOuter+','+rOuter+' 0 '+largeArc+',1 '+x2o.toFixed(2)+','+y2o.toFixed(2)
+         + ' L'+x1i.toFixed(2)+','+y1i.toFixed(2)
+         + ' A'+rInner+','+rInner+' 0 '+largeArc+',0 '+x2i.toFixed(2)+','+y2i.toFixed(2)
+         + ' Z';
+  }
   function _svgDonut(segments, size, thickness){
-    size = size || 130;
-    thickness = thickness || 24;
+    size = size || 130; thickness = thickness || 26;
     var total = segments.reduce(function(a, s){ return a + (s.value||0); }, 0);
-    var r = (size - thickness) / 2;
+    var rOuter = (size/2) - 2;
+    var rInner = rOuter - thickness;
     var cx = size/2, cy = size/2;
-    var circ = 2 * Math.PI * r;
-    var offset = 0;
     var paths = '';
+    /* Always draw a grey background ring so empty donuts still look intentional */
+    paths += '<circle cx="'+cx+'" cy="'+cy+'" r="'+((rOuter+rInner)/2)+'" '
+           + 'stroke="#e5e7eb" stroke-width="'+thickness+'" fill="none"/>';
     if(total > 0){
+      var startAngle = -Math.PI / 2;  /* start at 12 o'clock */
       segments.forEach(function(s){
         if(!s.value) return;
-        var len = (s.value / total) * circ;
-        paths += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" '
-              + 'stroke="'+s.color+'" stroke-width="'+thickness+'" fill="none" '
-              + 'stroke-dasharray="'+len.toFixed(2)+' '+(circ-len).toFixed(2)+'" '
-              + 'stroke-dashoffset="'+(-offset).toFixed(2)+'" '
-              + 'transform="rotate(-90 '+cx+' '+cy+')"/>';
-        offset += len;
+        var sweep = (s.value / total) * 2 * Math.PI;
+        /* If a single segment is the whole circle, draw a full ring instead */
+        if(s.value === total){
+          paths += '<circle cx="'+cx+'" cy="'+cy+'" r="'+((rOuter+rInner)/2)+'" '
+                 + 'stroke="'+s.color+'" stroke-width="'+thickness+'" fill="none"/>';
+        } else {
+          paths += '<path d="'+_arcPath(cx, cy, rOuter, rInner, startAngle, startAngle+sweep)
+                 + '" fill="'+s.color+'" stroke="none"/>';
+        }
+        startAngle += sweep;
       });
-    } else {
-      paths = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" '
-            + 'stroke="#e5e7eb" stroke-width="'+thickness+'" fill="none"/>';
     }
     var lblTtl = _isAr() ? 'إجمالي' : 'Total';
     return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size
-         + '" xmlns="http://www.w3.org/2000/svg">'
+         + '" xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0">'
          + paths
          + '<text x="'+cx+'" y="'+(cy-4)+'" text-anchor="middle" '
          +   'font-size="10" font-weight="700" fill="#94a3b8" '
@@ -3583,26 +3610,25 @@ await db_fire.collection('login_audit').add(entry);
          +   'font-family="Segoe UI, Tahoma, sans-serif">'+total+'</text>'
          + '</svg>';
   }
-
   function _svgProgressCircle(pct, color, size){
-    size = size || 88;
-    var thickness = 9;
-    var r = (size - thickness) / 2;
+    size = size || 88; var thickness = 10;
+    var rOuter = (size/2) - 2;
+    var rInner = rOuter - thickness;
     var cx = size/2, cy = size/2;
-    var circ = 2 * Math.PI * r;
     var p = Math.max(0, Math.min(100, pct||0));
-    var fillLen = (p / 100) * circ;
     var fillArc = '';
-    if(fillLen > 0){
-      fillArc = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" '
-              + 'stroke="'+color+'" stroke-width="'+thickness+'" fill="none" '
-              + 'stroke-dasharray="'+fillLen.toFixed(2)+' '+(circ-fillLen).toFixed(2)+'" '
-              + 'stroke-linecap="round" '
-              + 'transform="rotate(-90 '+cx+' '+cy+')"/>';
+    if(p >= 100){
+      fillArc = '<circle cx="'+cx+'" cy="'+cy+'" r="'+((rOuter+rInner)/2)+'" '
+              + 'stroke="'+color+'" stroke-width="'+thickness+'" fill="none"/>';
+    } else if(p > 0){
+      var sweep = (p/100) * 2 * Math.PI;
+      var start = -Math.PI/2;
+      fillArc = '<path d="'+_arcPath(cx, cy, rOuter, rInner, start, start+sweep)
+              + '" fill="'+color+'" stroke="none"/>';
     }
     return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size
-         + '" xmlns="http://www.w3.org/2000/svg">'
-         + '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" '
+         + '" xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0">'
+         + '<circle cx="'+cx+'" cy="'+cy+'" r="'+((rOuter+rInner)/2)+'" '
          +   'stroke="#e5e7eb" stroke-width="'+thickness+'" fill="none"/>'
          + fillArc
          + '<text x="'+cx+'" y="'+(cy+5)+'" text-anchor="middle" '
@@ -3634,12 +3660,9 @@ await db_fire.collection('login_audit').add(entry);
     var p = _isAr() ? ('صفحة '+page+' من '+total) : ('Page '+page+' of '+total);
     return '<div class="tp-footer"><span>'+_esc(brand)+'</span><span>'+_esc(p)+'</span></div>';
   }
-
-  /* 7 summary cards (matches dashboard layout) */
   function _summaryCardsPro(rows, s){
     var empCount = _countEmployees(rows);
     var note = _isAr() ? 'نحتاج مراجعة فورية' : 'Needs review';
-
     var cards = [
       { icon:'👥', label: _isAr()?'الموظفون'     :'Employees',   value: empCount,      color:'#a855f7' },
       { icon:'⚠', label: _isAr()?'متأخرة'        :'Overdue',     value: s.late,        color:'#ef4444', highlight: s.late>0, note: s.late>0?note:'' },
@@ -3649,7 +3672,6 @@ await db_fire.collection('login_audit').add(entry);
       { icon:'✅', label: _isAr()?'مكتملة'        :'Completed',   value: s.completed,   color:'#10b981' },
       { icon:'📊', label: _isAr()?'إجمالي المهام' :'Total Tasks', value: s.total,       color:'#2563eb' }
     ];
-
     var html = '<div class="tp-cards-row">';
     cards.forEach(function(c){
       html += '<div class="tp-card-mini' + (c.highlight ? ' tp-card-highlight' : '') + '" '
@@ -3663,8 +3685,6 @@ await db_fire.collection('login_audit').add(entry);
     html += '</div>';
     return html;
   }
-
-  /* 4 progress circles row (matches the dashboard's circular widgets) */
   function _progressCirclesRow(s){
     var total = s.total || 0;
     function pct(v){ return total > 0 ? Math.round(v * 100 / total) : 0; }
@@ -3687,13 +3707,9 @@ await db_fire.collection('login_audit').add(entry);
     html += '</div>';
     return html;
   }
-
-  /* Two side-by-side distribution panels */
   function _distPanels(rows){
     var byS = _byStatus(rows);
     var byP = _byPriority(rows);
-
-    /* Status — horizontal bars */
     var staItems = [
       { key:'completed',   label:_staLabel('completed'),   value:byS.completed,   color:'#10b981', ic:'✅' },
       { key:'in_progress', label:_staLabel('in_progress'), value:byS.in_progress, color:'#f97316', ic:'🔄' },
@@ -3713,8 +3729,6 @@ await db_fire.collection('login_audit').add(entry);
               + '<div class="tp-hbar-val">'+it.value+'</div>'
               + '</div>';
     });
-
-    /* Priority — donut + legend */
     var priSegments = [
       { value:byP.urgent, color:'#ef4444', label:_priLabel('urgent') },
       { value:byP.high,   color:'#f97316', label:_priLabel('high')   },
@@ -3729,7 +3743,6 @@ await db_fire.collection('login_audit').add(entry);
               + '<span>'+_esc(seg.label)+' <strong>('+seg.value+')</strong></span>'
               + '</div>';
     });
-
     return '<div class="tp-dist-row">'
          + '<div class="tp-chart-panel">'
          +   '<div class="tp-chart-title">'
@@ -3749,12 +3762,9 @@ await db_fire.collection('login_audit').add(entry);
          + '</div>'
          + '</div>';
   }
-
-  /* Employee bars chart */
   function _employeeChart(rows){
     var emps = _byEmployeeDetailed(rows);
     if(!emps.length) return '';
-
     var maxTotal = Math.max(1, emps.reduce(function(a,e){ return Math.max(a, e.total); }, 0));
     var legend =
         '<div class="tp-emp-legend">'
@@ -3763,7 +3773,6 @@ await db_fire.collection('login_audit').add(entry);
       +  '<span class="tp-leg"><span class="tp-swatch" style="background:#eab308"></span>'+_staLabel('pending')+'</span>'
       +  '<span class="tp-leg"><span class="tp-swatch" style="background:#a855f7"></span>'+_staLabel('postponed')+'</span>'
       + '</div>';
-
     var bars = '';
     emps.forEach(function(e){
       var stacks = [
@@ -3785,7 +3794,6 @@ await db_fire.collection('login_audit').add(entry);
             + '<div class="tp-emp-bar-name">'+_esc(e.name)+'</div>'
             + '</div>';
     });
-
     return '<div class="tp-emp-chart">'
          + '<div class="tp-chart-title">'
          +   '<span class="tp-chart-icon" style="background:#2563eb">👤</span>'
@@ -3796,8 +3804,6 @@ await db_fire.collection('login_audit').add(entry);
          + '<div class="tp-emp-bars">'+bars+'</div>'
          + '</div>';
   }
-
-  /* Page 2 — professional task table */
   function _tasksTablePro(rows){
     var headers = _isAr()
       ? ['#','المهمة','المكلف','الأولوية','الحالة','تاريخ البدء','الموعد النهائي','التقدم']
@@ -3811,7 +3817,6 @@ await db_fire.collection('login_audit').add(entry);
              + '<thead><tr>';
     headers.forEach(function(h){ html += '<th>'+_esc(h)+'</th>'; });
     html += '</tr></thead><tbody>';
-
     if(!rows.length){
       html += '<tr><td colspan="8" class="tp-empty">'
             + _esc(_isAr()?'لا توجد مهام لعرضها':'No tasks to display')+'</td></tr>';
@@ -3819,12 +3824,10 @@ await db_fire.collection('login_audit').add(entry);
       rows.forEach(function(r, i){
         var st = r._userStatus || 'pending';
         var pri = r.priority || 'medium';
-        var prog = (typeof r._effectiveProgress==='number')
-                 ? r._effectiveProgress : (Number(r.progress)||0);
+        var prog = (typeof r._effectiveProgress==='number') ? r._effectiveProgress : (Number(r.progress)||0);
         var dept = _userDept(r._displayUser);
         var late = r._late;
         var prFill = prog >= 70 ? '#10b981' : prog >= 40 ? '#f59e0b' : '#ef4444';
-
         html += '<tr>'
               + '<td class="tp-task-num">'+(i+1)+'</td>'
               + '<td class="tp-task-title-cell">'
@@ -3853,7 +3856,7 @@ await db_fire.collection('login_audit').add(entry);
     return html;
   }
 
-  /* ---------- main: build the full report ------------------------------ */
+  /* ---------- build full report ---------------------------------------- */
   function _buildReport(page){
     var rows = _gatherTasksForPage(page);
     var s = _summary(rows);
@@ -3863,8 +3866,6 @@ await db_fire.collection('login_audit').add(entry);
       admin: _isAr() ? '🛡️ تقرير الإدارة — منصة تانيا' : '🛡️ Admin Report — Tania'
     };
     var title = titleMap[page] || titleMap.mgr;
-
-    /* Page 1: header + cards + circles + dist + emp chart */
     var p1 = '<div class="tp-page tp-page-1">'
            +   _hdr(title)
            +   _summaryCardsPro(rows, s)
@@ -3873,8 +3874,6 @@ await db_fire.collection('login_audit').add(entry);
            +   ((page==='mgr'||page==='admin') ? _employeeChart(rows) : '')
            +   _footer(1, 2)
            + '</div>';
-
-    /* Page 2: header + professional task table */
     var p2 = '<div class="tp-page tp-page-2">'
            +   _hdr(title)
            +   '<section class="tp-section">'
@@ -3883,11 +3882,10 @@ await db_fire.collection('login_audit').add(entry);
            +   '</section>'
            +   _footer(2, 2)
            + '</div>';
-
     return p1 + p2;
   }
 
-  /* ---------- mount + print -------------------------------------------- */
+  /* ---------- DOM mount + print orchestration -------------------------- */
   function _ensureRoot(){
     var r = document.getElementById('tania-print-root');
     if(!r){
@@ -3898,45 +3896,66 @@ await db_fire.collection('login_audit').add(entry);
     r.setAttribute('dir', _isAr()?'rtl':'ltr');
     return r;
   }
-  function _supportsAtPage(){
-    try{ return (typeof CSS!=='undefined' && CSS.supports && CSS.supports('(width:1cm)')); }
-    catch(_e){ return true; }
-  }
-
-  function printApp(){
+  function _populateRoot(){
     try{
       var page = _detectActivePage();
-      if(!page){
-        alert(_isAr()
-          ? 'لم أتمكّن من تحديد الصفحة النشطة. تأكّد من تسجيل الدخول.'
-          : 'Cannot detect active page. Please log in first.');
-        return;
-      }
       var root = _ensureRoot();
       var bw = false;
       try{ var ps = JSON.parse(localStorage.getItem('printSettings')||'{}'); bw = !!ps.printBW; }catch(_e){}
       root.className = bw ? 'tp-bw' : '';
       root.innerHTML = _buildReport(page);
+      document.body.classList.add('tania-printing');
+      return true;
+    }catch(err){
+      console.error('[print v25] populate error:', err);
+      return false;
+    }
+  }
+  function _teardown(){
+    document.body.classList.remove('tania-printing');
+    try{
+      var r = document.getElementById('tania-print-root');
+      if(r) r.innerHTML = '';
+    }catch(_e){}
+  }
 
-      if(!_supportsAtPage()){
-        setTimeout(function(){ try{ window.print(); }catch(_e){} }, 50);
+  /* === AUTO-ENGAGE on any print event (Ctrl+P, menu, or printApp) === */
+  window.addEventListener('beforeprint', function(){
+    /* Always rebuild so latest DB state is reflected */
+    _populateRoot();
+  });
+  window.addEventListener('afterprint', function(){
+    _teardown();
+  });
+  /* Safari + some browsers fire matchMedia('print') instead of beforeprint */
+  try{
+    var mql = window.matchMedia && window.matchMedia('print');
+    if(mql && mql.addEventListener){
+      mql.addEventListener('change', function(e){
+        if(e.matches){ _populateRoot(); }
+        else        { _teardown();  }
+      });
+    } else if(mql && mql.addListener){
+      mql.addListener(function(e){
+        if(e.matches){ _populateRoot(); }
+        else        { _teardown();  }
+      });
+    }
+  }catch(_e){}
+
+  /* === In-app button entry point — same engine, just triggers print() === */
+  function printApp(){
+    try{
+      if(!_populateRoot()){
+        alert(_isAr()?'تعذّر بناء التقرير.':'Failed to build the report.');
         return;
       }
       requestAnimationFrame(function(){
         setTimeout(function(){
-          try{ window.print(); }catch(_e){ console.warn('print() failed', _e); }
-        }, 100);
+          try{ window.print(); }catch(e){ console.warn('print()', e); }
+        }, 80);
       });
-
-      var done = false;
-      function _after(){
-        if(done) return; done = true;
-        try{ root.innerHTML = ''; }catch(_e){}
-        window.removeEventListener('afterprint', _after);
-      }
-      window.addEventListener('afterprint', _after);
-      setTimeout(_after, 60000);
-
+      setTimeout(_teardown, 60000);
     }catch(err){
       console.error('printApp error:', err);
       alert((_isAr()?'خطأ في الطباعة: ':'Print error: ') + (err && err.message || err));
@@ -3948,7 +3967,7 @@ await db_fire.collection('login_audit').add(entry);
   window._printCapture = function(){ return Promise.resolve(null); };
   window._printDetectActivePage = _detectActivePage;
 })();
-/* === نهاية v24 print system === */
+/* === نهاية v25 print system === */
 
 
 /* ===== Phase 11 (v14) — Parallel Authentication System for Employees ===== */
@@ -11898,7 +11917,7 @@ if(!window.NTF){ setTimeout(init, 500); return; }
 setTimeout(function(){
 welcomeNotifIfFirstTime();
 injectDemoButton();
-/* === perf-v1: stop polling once button is injected; cap at 30s === */
+/* === perf-v1 === */
 var _ntfDemoTimer = setInterval(function(){
 try{ injectDemoButton(); if(document.querySelector('.tania-ntf-demo-btn')){ clearInterval(_ntfDemoTimer); _ntfDemoTimer=null; } }catch(_e){}
 }, 4000);
