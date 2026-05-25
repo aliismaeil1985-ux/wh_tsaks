@@ -1798,6 +1798,12 @@ function _smartMerge(localArr, remoteArr, localTomb, remoteTomb){
   }
   (localTomb||[]).forEach(trackTomb);
   (remoteTomb||[]).forEach(trackTomb);
+
+  /* Build lookup maps for field-level merging */
+  const localMap = {}, remoteMap = {};
+  (localArr||[]).forEach(function(item){ if(item&&item.id!=null) localMap[String(item.id)]=item; });
+  (remoteArr||[]).forEach(function(item){ if(item&&item.id!=null) remoteMap[String(item.id)]=item; });
+
   const out = {};
   function consider(item){
     if(!item || item.id==null) return;
@@ -1807,12 +1813,41 @@ function _smartMerge(localArr, remoteArr, localTomb, remoteTomb){
   }
   (localArr||[]).forEach(consider);
   (remoteArr||[]).forEach(consider);
+
   const result = [];
   Object.keys(out).forEach(function(k){
-    const item = out[k];
+    var item = out[k];
     const itemLm = (typeof item._lm === 'number') ? item._lm : 0;
     const tombLm = tombMap[k];
     if(tombLm != null && tombLm >= itemLm) return;
+
+    /* === Field-level merge for perUserStatus + perUserCompletion ===
+       Problem: last-write-wins on _lm replaces the WHOLE object.
+       If Manager edits task title on PC (new _lm) → PC wins → overwrites
+       employee's perUserStatus change from mobile (older _lm).
+       Fix: after picking winner by _lm, UNION perUserStatus from both
+       sides so no per-user completion is silently lost. */
+    var local  = localMap[k];
+    var remote = remoteMap[k];
+    if(local && remote){
+      var loser = (item === local) ? remote : local;
+      var hasPUS = (loser.perUserStatus && Object.keys(loser.perUserStatus).length);
+      var hasPUC = (loser.perUserCompletion && Object.keys(loser.perUserCompletion).length);
+      if(hasPUS || hasPUC){
+        var mergedPUS = Object.assign({}, loser.perUserStatus||{}, item.perUserStatus||{});
+        var mergedPUC = Object.assign({}, loser.perUserCompletion||{}, item.perUserCompletion||{});
+        var changed = (JSON.stringify(mergedPUS) !== JSON.stringify(item.perUserStatus||{})) ||
+                      (JSON.stringify(mergedPUC) !== JSON.stringify(item.perUserCompletion||{}));
+        if(changed){
+          item = Object.assign({}, item, {perUserStatus:mergedPUS, perUserCompletion:mergedPUC});
+          /* Re-aggregate overall status after merging per-user statuses */
+          try{
+            if(typeof _aggregateTaskStatus==='function') item.status = _aggregateTaskStatus(item);
+          }catch(_e){}
+        }
+      }
+    }
+
     result.push(item);
   });
   return result;
@@ -4553,8 +4588,16 @@ if(!candidate) return null;
 if(candidate.frozen) return {ok:false, reason:'frozen', user:candidate};
 await _ensureAnonSignedIn();
 const uid = String(candidate.id);
+/* === قراءة كلا المستندين بشكل متوازٍ بدلاً من تسلسلي — يوفر ~300ms على الجوال === */
+let permSnap = null, tempSnap = null;
 try{
-const permSnap = await db_fire.collection('permanent_passwords').doc(uid).get();
+[permSnap, tempSnap] = await Promise.all([
+  db_fire.collection('permanent_passwords').doc(uid).get(),
+  db_fire.collection('temp_passwords').doc(uid).get()
+]);
+}catch(e){ console.warn('parallel pw read err:', e && e.message || e); }
+/* جرّب كلمة المرور الدائمة */
+try{
 if(permSnap && permSnap.exists){
 const d = permSnap.data();
 if(d && d.hash && d.salt){
@@ -4562,9 +4605,9 @@ const h = await _pbkdf2Hash(password, d.salt);
 if(h === d.hash){ return {ok:true, user:candidate, mustChangePassword:false, via:'permanent'}; }
 }
 }
-}catch(e){ console.warn('perm read err:', e && e.message || e); }
+}catch(e){ console.warn('perm check err:', e && e.message || e); }
+/* جرّب كلمة المرور المؤقتة */
 try{
-const tempSnap = await db_fire.collection('temp_passwords').doc(uid).get();
 if(tempSnap && tempSnap.exists){
 const d = tempSnap.data();
 if(d && d.hash && d.salt){
@@ -4575,7 +4618,7 @@ if(h === d.hash){ return {ok:true, user:candidate, mustChangePassword:true, via:
 }
 }
 }
-}catch(e){ console.warn('temp read err:', e && e.message || e); }
+}catch(e){ console.warn('temp check err:', e && e.message || e); }
 return null;
 }catch(e){ console.error('custom-auth fatal:', e); return null; }
 }
@@ -4735,7 +4778,15 @@ err.style.display='block';
 return;
 }
 const btn=$('login-btn');
-btn.textContent='جارٍ التحقق...';btn.disabled=true;
+btn.textContent='🔐 جارٍ التحقق...';btn.disabled=true;
+/* أرسل رسائل تقدم لتحسين التجربة على الجوال */
+const _loginStages=['🔍 جارٍ التحقق...','🔒 التحقق من الهوية...','✅ جارٍ الدخول...'];
+let _stageIdx=0;
+const _stageTmr=setInterval(function(){
+_stageIdx=(_stageIdx+1)%_loginStages.length;
+if(btn&&!btn.disabled===false) btn.textContent=_loginStages[_stageIdx];
+},1800);
+const _clearLoginStage=function(){ clearInterval(_stageTmr); };
 try{
 /* تأكد من أن Firebase Auth SDK محمَّل */
 if(typeof firebase==='undefined' || !firebase.auth){
@@ -4764,7 +4815,7 @@ if(customResult.mustChangePassword){
 sessionStorage.setItem('mustChangePassword', 'true');
 setTimeout(function(){ try{ showForceChangePasswordModal(); }catch(_e){} }, 1500);
 }
-btn.textContent='دخول';btn.disabled=false;
+_clearLoginStage();btn.textContent='دخول';btn.disabled=false;
 return;
 }else if(customResult && customResult.reason==='frozen'){
 const err=$('login-err');
@@ -5391,6 +5442,7 @@ window._empApexChart.render();
 function filterByStatus(f){
 const btn=document.querySelectorAll('#pg-mgr .tab')[1];
 mgrTab('tasks',btn);
+if(window.innerWidth<768) setTimeout(function(){ window.scrollTo({top:0,behavior:'smooth'}); }, 100);
 setTimeout(()=>{
 if(f==='overdue'){renderMgrTasks('overdue');return;}
 $('tf-sta').value=f==='all'?'':f;
@@ -6100,6 +6152,8 @@ renderEmpDashboard();
 } else if(tab==='my'){
 var el=document.getElementById('emp-my');if(el)el.style.display='block';
 renderEmpTasks();renderEmpStats();
+/* على الجوال: تمرير للأعلى ليرى المستخدم التغيير */
+if(window.innerWidth<768) setTimeout(function(){ window.scrollTo({top:0,behavior:'smooth'}); }, 80);
 } else if(tab==='notes'){
 var el=document.getElementById('emp-notes-tab');if(el)el.style.display='block';
 renderEmpNotes();
@@ -12672,6 +12726,98 @@ _wireFilterStickyTop();
   #chart-filter-lbl {
     flex: 0 0 100% !important;
     font-size: 11px !important;
+  }
+}
+</style>
+
+<style id="v31-mobile-cards">
+/* ── Mobile card size reduction + click feedback ── */
+@media (max-width: 640px) {
+
+  /* Grid: 3 columns for smaller cards */
+  .stats-grid,
+  #emp-stats {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 5px !important;
+  }
+  /* Gauge card still spans full width */
+  #emp-stats .avg-gauge-card { grid-column: 1 / -1 !important; }
+
+  /* Card itself: very compact */
+  .stat-card {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 6px 7px 4px !important;
+    border-radius: 10px !important;
+    gap: 0 !important;
+    animation: none !important;
+    cursor: pointer !important;
+    -webkit-tap-highlight-color: rgba(0,0,0,.06) !important;
+    touch-action: manipulation !important;
+    user-select: none !important;
+    transition: transform 80ms, box-shadow 80ms !important;
+  }
+  .stat-card:active {
+    transform: scale(.95) !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15) !important;
+  }
+
+  /* Top row */
+  .stat-card .sc-top {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 2px !important;
+  }
+
+  /* Value: large number */
+  .stat-card .sc-value,
+  .stat-card [class*="value"] {
+    font-size: 20px !important;
+    font-weight: 900 !important;
+    line-height: 1.1 !important;
+  }
+
+  /* Label: tiny */
+  .stat-card .sc-label,
+  .stat-card [class*="label"] {
+    font-size: 9px !important;
+    line-height: 1.2 !important;
+    font-weight: 700 !important;
+  }
+
+  /* Icon: small */
+  .stat-card .sc-icon-wrap {
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 7px !important;
+    flex-shrink: 0 !important;
+    font-size: 13px !important;
+  }
+  .stat-card .sc-icon-wrap > span,
+  .stat-card .sc-icon-wrap span {
+    font-size: 13px !important;
+    line-height: 1 !important;
+  }
+
+  /* Footer arrow */
+  .stat-card .sc-footer {
+    font-size: 8px !important;
+    margin-top: 2px !important;
+    opacity: .65 !important;
+    gap: 2px !important;
+    line-height: 1.2 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+}
+
+/* Very small phones: 2-column but even tighter */
+@media (max-width: 380px) {
+  .stats-grid,
+  #emp-stats {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 4px !important;
   }
 }
 </style>
