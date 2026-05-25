@@ -6492,7 +6492,95 @@ var html='<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">'
 +'<th style="width:36px;text-align:center">#</th><th>الموضوع</th><th>التفاصيل</th>'
 +'<th style="width:85px">التاريخ</th><th style="width:80px">الحالة</th>'
 +'</tr></thead><tbody>'+rows+'</tbody></table>'
-+'<div class="footer">'+co+' — '+dt+'</div></body></html>';
++'<div class="footer">'+co+' — '+dt+'</div>
+<style id="v30-mobile-compact">
+/* ============================================================
+ * v30 — تصغير قوي للبطاقات على الجوال
+ * الهدف: بطاقات ≤60px ارتفاعاً — رقم+تسمية+أيقونة مضغوطة
+ * ============================================================ */
+@media (max-width: 640px) {
+
+  /* ── حاوية البطاقات ── */
+  .stats-grid,
+  #emp-stats {
+    grid-template-columns: repeat(2, 1fr) !important;
+    grid-auto-flow: row !important;
+    gap: 6px !important;
+  }
+  #emp-stats .avg-gauge-card { grid-column: 1 / -1 !important; }
+
+  /* ── البطاقة نفسها ── */
+  .stat-card {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 7px 9px 5px !important;
+    border-radius: 12px !important;
+    gap: 0 !important;
+    animation: none !important;
+  }
+
+  /* ── الصف العلوي ── */
+  .stat-card .sc-top {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  /* ── التسمية ── */
+  .stat-card .sc-label,
+  .stat-card [class*="label"] {
+    font-size: 8px !important;
+    margin-bottom: 1px !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  /* ── القيمة الرقمية ── */
+  .stat-card .sc-value,
+  .stat-card [class*="value"] {
+    font-size: 22px !important;
+    line-height: 1 !important;
+    letter-spacing: -.02em !important;
+  }
+
+  /* ── الأيقونة ── */
+  .stat-card .sc-icon-wrap {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 9px !important;
+    flex-shrink: 0 !important;
+    font-size: 0 !important; /* سنتحكم بالحجم عبر الـ span */
+  }
+  .stat-card .sc-icon-wrap > span,
+  .stat-card .sc-icon-wrap span {
+    font-size: 15px !important;
+    line-height: 1 !important;
+  }
+
+  /* ── الفوتر "اضغط للعرض" ── */
+  .stat-card .sc-footer {
+    font-size: 7.5px !important;
+    margin-top: 2px !important;
+    opacity: .6 !important;
+    gap: 2px !important;
+    line-height: 1.2 !important;
+  }
+  .stat-card .sc-arrow { font-size: 8px !important; }
+
+  /* ── إيقاف hover animation على اللمس ── */
+  .stat-card:hover {
+    transform: none !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06) !important;
+  }
+  .stat-card:hover .sc-icon-wrap {
+    transform: none !important;
+  }
+}
+</style>
+
+</body></html>';
 var blob=new Blob([html],{type:'text/html;charset=utf-8'});
 var win=window.open(URL.createObjectURL(blob),'_blank');
 if(!win){notif('السماح بالنوافذ المنبثقة','err');return;}
@@ -6553,19 +6641,19 @@ var anchor=v===0?'start':v===100?'end':'middle';
 var yAdj=v===50?2:(v===0||v===100?5:0);
 return '<text x="'+p.x.toFixed(1)+'" y="'+(p.y+yAdj).toFixed(1)+'" text-anchor="'+anchor+'" font-size="12" fill="#64748b" font-weight="700" font-family="Cairo,sans-serif">'+v+'<tspan font-weight="300" font-size="8" opacity="0.6" dx="0.5">%</tspan></text>';
 }).join('');
-/* تسميات الدرجات على القوس عند r=92 (منتصف سُمك القوس 22px) بنص أبيض عريض */
+/* تسميات الدرجات خارج القوس — بين أرقام التدرج بنص ملوّن */
 const _gSecLabels=(function(){
 var secs=[
-{c:157.5, l:'ضعيف' },   /* 0–25%   منتصف القوس الأحمر   */
-{c:112.5, l:'متوسط'},   /* 25–50%  منتصف القوس البرتقالي */
-{c:67.5,  l:'جيد'  },   /* 50–75%  منتصف القوس الأخضر   */
-{c:22.5,  l:'ممتاز'}    /* 75–100% منتصف القوس الأخضر الغامق */
+{c:157.5, l:'ضعيف',  col:'#ef4444'},   /* 0–25%   بين 0 و25   */
+{c:112.5, l:'متوسط', col:'#f97316'},   /* 25–50%  بين 25 و50  */
+{c:67.5,  l:'جيد',   col:'#10b981'},   /* 50–75%  بين 50 و75  */
+{c:22.5,  l:'ممتاز', col:'#059669'}    /* 75–100% بين 75 و100 */
 ];
 return secs.map(function(s){
-var p=_gPol(s.c,92);
+var p=_gPol(s.c,122);  /* r=122 = خارج القوس (r=103) وخارج الأرقام (r=108) */
 return '<text x="'+p.x.toFixed(1)+'" y="'+p.y.toFixed(1)+'" '
 +'text-anchor="middle" dominant-baseline="middle" '
-+'font-size="9" font-weight="800" fill="white" opacity="0.95" '
++'font-size="8.5" font-weight="900" fill="'+s.col+'" '
 +'font-family="Almarai,Cairo,sans-serif">'+s.l+'</text>';
 }).join('');
 })();
