@@ -6501,10 +6501,7 @@ var html='<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">'
 +'<th style="width:36px;text-align:center">#</th><th>الموضوع</th><th>التفاصيل</th>'
 +'<th style="width:85px">التاريخ</th><th style="width:80px">الحالة</th>'
 +'</tr></thead><tbody>'+rows+'</tbody></table>'
-+'<div class="footer">'+co+' — '+dt+'</div>
-</style>
-
-</body></html>';
++'<div class="footer">'+co+' — '+dt+'</div></body></html>';
 var blob=new Blob([html],{type:'text/html;charset=utf-8'});
 var win=window.open(URL.createObjectURL(blob),'_blank');
 if(!win){notif('السماح بالنوافذ المنبثقة','err');return;}
