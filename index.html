@@ -583,6 +583,15 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
   }
 }
 
+/* إعادة ضبط شاشة الدخول — بلا padding-top إضافي */
+@media (max-width: 1023px) {
+  #pg-login {
+    padding-top: 20px !important;
+    padding-right: 20px !important;
+    padding-left: 20px !important;
+  }
+}
+
 /* 4) حماية إضافية من تعليق الإدخال على الجوال:
  *    تأخير تكلفة إعادة الرسم باستخدام layer + will-change موضعي */
 @media (max-width: 1023px) {
@@ -681,8 +690,8 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
     box-sizing: border-box !important;
   }
   /* المحتوى الرئيسي (الصفحات) بادينج مناسب مع زر الهامبرغر */
-  .page,
-  [class*="pg-"],
+  .page:not(#pg-login),
+  [class*="pg-"]:not(#pg-login),
   #mgr-ov, #mgr-tasks, #mgr-arch, #mgr-emps, #mgr-notes,
   #pg-emp {
     padding-top: 70px !important;   /* مساحة لزر الهامبرغر الثابت */
