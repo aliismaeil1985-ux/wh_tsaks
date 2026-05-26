@@ -1838,12 +1838,32 @@ function _smartMerge(localArr, remoteArr, localTomb, remoteTomb){
       var hasPUS = (loser.perUserStatus && Object.keys(loser.perUserStatus).length);
       var hasPUC = (loser.perUserCompletion && Object.keys(loser.perUserCompletion).length);
       if(hasPUS || hasPUC){
-        var mergedPUS = Object.assign({}, loser.perUserStatus||{}, item.perUserStatus||{});
+        /* FIX-PUSLM: use per-user-status timestamps (_puslm) for field-level merge.
+           Without this, three employees saving simultaneously lose each other's
+           status updates because the newer task._lm overrides all per-user fields.
+           With _puslm each user's status is resolved independently by its own timestamp. */
+        var winnerPUSLM = item._puslm || {};
+        var loserPUSLM  = loser._puslm || {};
+        var mergedPUS = {}, mergedPUSLM = {};
+        var allPUSKeys = {};
+        Object.keys(item.perUserStatus||{}).forEach(function(u){allPUSKeys[u]=1;});
+        Object.keys(loser.perUserStatus||{}).forEach(function(u){allPUSKeys[u]=1;});
+        Object.keys(allPUSKeys).forEach(function(uid){
+          var lmW = Number(winnerPUSLM[uid]||0);
+          var lmL = Number(loserPUSLM[uid]||0);
+          if(lmW >= lmL){
+            mergedPUS[uid]   = (item.perUserStatus||{})[uid]||'pending';
+            mergedPUSLM[uid] = lmW;
+          } else {
+            mergedPUS[uid]   = (loser.perUserStatus||{})[uid]||'pending';
+            mergedPUSLM[uid] = lmL;
+          }
+        });
         var mergedPUC = Object.assign({}, loser.perUserCompletion||{}, item.perUserCompletion||{});
         var changed = (JSON.stringify(mergedPUS) !== JSON.stringify(item.perUserStatus||{})) ||
                       (JSON.stringify(mergedPUC) !== JSON.stringify(item.perUserCompletion||{}));
         if(changed){
-          item = Object.assign({}, item, {perUserStatus:mergedPUS, perUserCompletion:mergedPUC});
+          item = Object.assign({}, item, {perUserStatus:mergedPUS, _puslm:mergedPUSLM, perUserCompletion:mergedPUC});
           /* Re-aggregate overall status after merging per-user statuses */
           try{
             if(typeof _aggregateTaskStatus==='function') item.status = _aggregateTaskStatus(item);
@@ -3356,7 +3376,6 @@ el.innerHTML=tasks.slice(-5).reverse().map(x=>`
 <span class="badge" style="background:${STA[x.status]?.color||'#64748b'}22;color:${STA[x.status]?.color||'#64748b'};font-size:10px;white-space:nowrap">${STA[x.status]?.icon||''} ${STA[x.status]?.label||x.status}</span>
 </div>`).join('')||`<div style="color:var(--tx3);font-size:13px;text-align:center;padding:20px">${t('noTasks')}</div>`;
 }
-function _(key){ return t(key); }
 async function hashPW(pw){
 const enc=new TextEncoder();
 const buf=await crypto.subtle.digest('SHA-256',enc.encode(pw+'tania_salt_2026'));
@@ -3364,7 +3383,6 @@ return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).jo
 }
 const HASHED_DEFAULTS={};
 /* تأمين 3.2: لا توجد كلمات مرور افتراضية في الكود لتجزئتها */
-(async()=>{ /* no-op: defaults removed */ })();
 async function getPWHash(uid){
 /* تأمين 3.2: الكلمات الافتراضية أُزيلت — يجب على المستخدم تعيين كلمته الخاصة عبر Firebase Auth */
 const stored=PW[uid];
@@ -4603,12 +4621,13 @@ const TEMP_PW_LIFETIME_MS = 60 * 60 * 1000;
 const PBKDF2_ITERATIONS = 50000; /* FIX: reduced from 100k — still meets NIST minimum (10k), ~2× faster on mobile */
 const TEMP_PW_LEN = 10;
 
-async function _pbkdf2Hash(password, saltHex){
+async function _pbkdf2Hash(password, saltHex, _iters){
+/* FIX-PBKDF2: accepts optional _iters so legacy 100k hashes still verify correctly */
 const enc = new TextEncoder();
 const pwBuf = enc.encode(String(password||''));
 const saltBuf = new Uint8Array(saltHex.match(/.{1,2}/g).map(function(b){return parseInt(b,16);}));
 const baseKey = await crypto.subtle.importKey('raw', pwBuf, {name:'PBKDF2'}, false, ['deriveBits']);
-const bits = await crypto.subtle.deriveBits({name:'PBKDF2', salt:saltBuf, iterations:PBKDF2_ITERATIONS, hash:'SHA-256'}, baseKey, 256);
+const bits = await crypto.subtle.deriveBits({name:'PBKDF2', salt:saltBuf, iterations:(_iters||PBKDF2_ITERATIONS), hash:'SHA-256'}, baseKey, 256);
 return Array.from(new Uint8Array(bits)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
 }
 function _genSaltHex(){
@@ -4625,13 +4644,23 @@ let out = '';
 for(let i=0;i<arr.length;i++) out += chars[arr[i] % chars.length];
 return out;
 }
+let _anonSignInPromise = null; /* FIX-RACE: singleton prevents concurrent signInAnonymously calls */
 async function _ensureAnonSignedIn(){
 try{
 if(typeof firebase==='undefined' || !firebase.auth) return null;
 if(firebase.auth().currentUser) return firebase.auth().currentUser;
-const result = await firebase.auth().signInAnonymously();
-return result && result.user;
-}catch(e){ console.warn('anon sign-in failed:', e && e.message || e); return null; }
+/* Reuse in-progress promise so pre-warm + login-click don't clash */
+if(_anonSignInPromise) return await _anonSignInPromise;
+_anonSignInPromise = firebase.auth().signInAnonymously().then(function(r){
+  _anonSignInPromise = null;
+  return r && r.user;
+}).catch(function(e){
+  _anonSignInPromise = null;
+  console.warn('anon sign-in failed:', e && e.message || e);
+  return null;
+});
+return await _anonSignInPromise;
+}catch(e){ _anonSignInPromise=null; console.warn('anon sign-in failed:', e && e.message || e); return null; }
 }
 async function tryCustomAuthLogin(email, password){
 try{
@@ -4648,13 +4677,21 @@ try{
   db_fire.collection('permanent_passwords').doc(uid).get(),
   db_fire.collection('temp_passwords').doc(uid).get()
 ]);
-}catch(e){ console.warn('parallel pw read err:', e && e.message || e); }
+}catch(e){
+console.warn('parallel pw read err:', e && e.message || e);
+/* FIX-ERR: surface Firestore permission errors so login shows correct message */
+if(e && (e.code==='permission-denied' || (e.message||'').includes('Missing or insufficient permissions'))){
+  throw Object.assign(new Error('firestore-permission'), {_pwReadFail:true});
+}
+}
 /* جرّب كلمة المرور الدائمة */
 try{
 if(permSnap && permSnap.exists){
 const d = permSnap.data();
 if(d && d.hash && d.salt){
-const h = await _pbkdf2Hash(password, d.salt);
+/* FIX-COMPAT: use stored iterations (new passwords) OR legacy 100k (old passwords) */
+const _storedIter = d.iterations || 100000;
+const h = await _pbkdf2Hash(password, d.salt, _storedIter);
 if(h === d.hash){ return {ok:true, user:candidate, mustChangePassword:false, via:'permanent'}; }
 }
 }
@@ -4666,7 +4703,9 @@ const d = tempSnap.data();
 if(d && d.hash && d.salt){
 const exp = d.expiresAt && d.expiresAt.toMillis ? d.expiresAt.toMillis() : (d.expiresAtMs || 0);
 if(exp && exp > Date.now()){
-const h = await _pbkdf2Hash(password, d.salt);
+/* FIX-COMPAT: use stored iterations (new) OR legacy 100k (old) */
+const _storedIter = d.iterations || 100000;
+const h = await _pbkdf2Hash(password, d.salt, _storedIter);
 if(h === d.hash){ return {ok:true, user:candidate, mustChangePassword:true, via:'temp'}; }
 }
 }
@@ -4690,6 +4729,7 @@ const expMs = nowMs + TEMP_PW_LIFETIME_MS;
 const doc = {
 hash: hash,
 salt: salt,
+iterations: PBKDF2_ITERATIONS, /* FIX-COMPAT: store so future verifications use correct count */
 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
 expiresAt: firebase.firestore.Timestamp.fromMillis(expMs),
 expiresAtMs: expMs,
@@ -4725,6 +4765,7 @@ const uid = String(CU.id);
 await db_fire.collection('permanent_passwords').doc(uid).set({
 hash: hash,
 salt: salt,
+iterations: PBKDF2_ITERATIONS, /* FIX-COMPAT: store so future verifications use correct count */
 updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
 updatedAtMs: Date.now()
 });
@@ -4809,7 +4850,7 @@ res.innerHTML = '<div style="background:#ecfdf5;border:1px solid #10b981;border-
 if(res) res.innerHTML = '<div style="background:#fef2f2;border:1px solid #ef4444;border-radius:8px;padding:12px;font-size:13px;color:#991b1b">❌ فشل: '+ String((r && r.error) || 'خطأ') +'</div>';
 }
 }
-function candidate_isFrozen(u){ return !!(u && u.frozen === true); }
+/* candidate_isFrozen removed — frozen check is inline in tryCustomAuthLogin */
 /* ===== End Phase 11 (v14) ===== */
 
 
@@ -4837,7 +4878,7 @@ const _loginStages=['🔍 جارٍ التحقق...','🔒 التحقق من ال
 let _stageIdx=0;
 const _stageTmr=setInterval(function(){
 _stageIdx=(_stageIdx+1)%_loginStages.length;
-if(btn&&!btn.disabled===false) btn.textContent=_loginStages[_stageIdx];
+if(btn && btn.disabled) btn.textContent=_loginStages[_stageIdx];
 },1800);
 const _clearLoginStage=function(){ clearInterval(_stageTmr); };
 try{
@@ -6841,7 +6882,9 @@ t.status=sta;
 try{
 const _aa = Array.isArray(t.assignedTo) ? t.assignedTo : (t.assignedTo?[t.assignedTo]:[]);
 if(!t.perUserStatus) t.perUserStatus={};
-_aa.forEach(function(_u){ t.perUserStatus[_u] = sta; });
+if(!t._puslm) t._puslm={};
+var _mgrStamp_=Date.now();
+_aa.forEach(function(_u){ t.perUserStatus[_u]=sta; t._puslm[_u]=_mgrStamp_; }); /* FIX-PUSLM */
 }catch(e){}
 if(sta==='completed'){
 if(!t.completionDate){
@@ -6856,6 +6899,8 @@ if(t.perUserCompletion) t.perUserCompletion={};
 }
 } else {
 if(!t.perUserStatus) t.perUserStatus={};
+if(!t._puslm) t._puslm={};
+t._puslm[CU.id]=Date.now(); /* FIX-PUSLM: field-level timestamp */
 t.perUserStatus[CU.id]=sta;
 if(sta==='completed'){
 if(!t.perUserCompletion) t.perUserCompletion={};
@@ -7154,6 +7199,12 @@ const _prevStatus_mgr = existingTask?.status;
    individual status — otherwise manager edits silently wipe employee progress. */
 const _statusChanged_mgr = (_prevStatus_mgr !== sta);
 const _newPUC_mgr = (_statusChanged_mgr && sta !== 'completed') ? {} : _prevPUC_mgr;
+/* FIX-PUSLM: stamp per-user timestamps when manager explicitly changes status */
+const _prevPUSLM_mgr = existingTask?._puslm || {};
+const _mgrEditStamp = Date.now();
+const _newPUSLM_mgr = _statusChanged_mgr
+  ? Object.fromEntries((assignTo||[]).map(function(_u){return [_u, _mgrEditStamp];}))
+  : _prevPUSLM_mgr;
 const _newPUS_mgr = _statusChanged_mgr
   ? Object.fromEntries((assignTo||[]).map(function(_u){return [_u, sta];}))
   : _prevPUS_mgr;
@@ -7173,7 +7224,7 @@ attachments: tmpFiles.map(f=>({...f})),
 completionDate: sta === 'completed' ? (compDate || existingTask?.completionDate || null) : null,
 completionTime: sta === 'completed' ? (compTime || existingTask?.completionTime || null) : null,
 perUserCompletion: _newPUC_mgr,
-perUserStatus: _newPUS_mgr,
+perUserStatus: _newPUS_mgr, _puslm: _newPUSLM_mgr,
 recurring: isRecurActive() ? (document.getElementById('t-recur-type')?.value || 'daily') : 'none'
 };
 } else {
