@@ -5155,7 +5155,7 @@ var cards=[
 {l:t('inProgressCount'),v:inP,c:'#f97316',i:'🔄',f:'in_progress'},
 {l:t('waitingCount'),v:pend,c:'#eab308',i:'⏳',f:'pending'},
 /* === New card: postponed tasks (مؤجلة). Clicking filters task list to postponed. === */
-{l:t('postponedCount')||'مؤجلة',v:post,c:'#a855f7',i:'⏸️',f:'postponed'},
+{l:t('postponedCount'),v:post,c:'#a855f7',i:'⏸️',f:'postponed'},
 {l:t('employeeCount'),v:getEmps().length,c:'#8b5cf6',i:'👥',f:'emps'}
 ];
 var _ovIsZero = (ov === 0);
@@ -5185,7 +5185,7 @@ return overdueInjected + `<div class="stat-card"${c.f?' onclick="'+clickAction+'
 </div>
 <div class="sc-icon-wrap"><span style="font-size:22px">${c.i}</span></div>
 </div>
-${c.f?`<div class="sc-footer" style="color:${c.c}">${t('clickToView')} <span class="sc-arrow">←</span></div>`:''}
+${c.f?`<div class="sc-footer" style="color:${c.c}">${t('clickToView')} <span class="sc-arrow">${LANG==='en'?'→':'←'}</span></div>`:''}
 </div>`;
 }).join('');
 $('mgr-stats').innerHTML = statsHtml;
@@ -6246,17 +6246,18 @@ var inp=tasks.filter(function(t){return (t._userStatus||t.status)==='in_progress
 var pend=tasks.filter(function(t){return (t._userStatus||t.status)==='pending';}).length;
 var post=tasks.filter(function(t){return (t._userStatus||t.status)==='postponed';}).length;
 var ov=tasks.filter(function(t){return t.deadline&&t.deadline<today()&&(t._userStatus||t.status)!=='completed'&&(t._userStatus||t.status)!=='cancelled'&&(t._userStatus||t.status)!=='postponed';}).length;
-updateEmpCircle('total',100,total,'مهام');
-updateEmpCircle('done',total?Math.round(done/total*100):0,done,'مهام');
-updateEmpCircle('inp',total?Math.round(inp/total*100):0,inp,'مهام');
-updateEmpCircle('ov',total?Math.round(ov/total*100):0,ov,'مهام');
-updateEmpCircle('pend',total?Math.round(pend/total*100):0,pend,'مهام');
-updateEmpCircle('post',total?Math.round(post/total*100):0,post,'مهام');
+var _tLbl=LANG==='en'?'tasks':'مهام';
+updateEmpCircle('total',100,total,_tLbl);
+updateEmpCircle('done',total?Math.round(done/total*100):0,done,_tLbl);
+updateEmpCircle('inp',total?Math.round(inp/total*100):0,inp,_tLbl);
+updateEmpCircle('ov',total?Math.round(ov/total*100):0,ov,_tLbl);
+updateEmpCircle('pend',total?Math.round(pend/total*100):0,pend,_tLbl);
+updateEmpCircle('post',total?Math.round(post/total*100):0,post,_tLbl);
 var priData=[
-{l:'عاجل',c:'#ef4444',k:'urgent'},
-{l:'عالية',c:'#f97316',k:'high'},
-{l:'متوسطة',c:'#eab308',k:'medium'},
-{l:'منخفضة',c:'#10b981',k:'low'}
+{l:t('priUrgent'),c:'#ef4444',k:'urgent'},
+{l:t('priHigh'),c:'#f97316',k:'high'},
+{l:t('priMedium'),c:'#eab308',k:'medium'},
+{l:t('priLow'),c:'#10b981',k:'low'}
 ];
 var priCounts=priData.map(function(p){return tasks.filter(function(t){return t.priority===p.k;}).length;});
 var priTotal=priCounts.reduce(function(a,b){return a+b;},0);
@@ -6290,14 +6291,14 @@ xaxis:{categories:priData.map(function(p){return p.l;}),
 labels:{style:{fontSize:'12px',fontWeight:'700',fontFamily:"'Cairo','Tajawal',sans-serif",colors:priData.map(function(){return textClr;})}},
 axisBorder:{show:false},axisTicks:{show:false}},
 yaxis:{min:0,forceNiceScale:true,
-title:{text:'عدد المهام',style:{fontSize:'12px',fontWeight:'600',fontFamily:"'Cairo','Tajawal',sans-serif",color:textClr}},
+title:{text:t('taskCountAxis'),style:{fontSize:'12px',fontWeight:'600',fontFamily:"'Cairo','Tajawal',sans-serif",color:textClr}},
 labels:{style:{fontSize:'11px',fontFamily:"'Cairo','Tajawal',sans-serif",colors:[textClr]},formatter:function(v){return Math.round(v);}}},
 grid:{show:true,borderColor:gridClr,strokeDashArray:4,position:'back',
 xaxis:{lines:{show:false}},yaxis:{lines:{show:true}},padding:{top:40,right:16,bottom:0,left:16}},
 stroke:{show:true,width:2,colors:['transparent']},
 tooltip:{enabled:true,shared:false,intersect:true,theme:isDark?'dark':'light',
 style:{fontSize:'13px',fontFamily:"'Cairo','Tajawal',sans-serif"},
-y:{formatter:function(v){if(!v)return '';var pct=priTotal?Math.round(v/priTotal*100):0;return v+' مهمة ('+pct+'%)'}}},
+y:{formatter:function(v){if(!v)return '';var pct=priTotal?Math.round(v/priTotal*100):0;return v+' '+t('auto_f69daab9d2')+' ('+pct+'%)'}}},
 legend:{show:false},
 theme:{mode:isDark?'dark':'light'},
 responsive:[
@@ -6310,11 +6311,11 @@ window._empPriChart.render();
 }
 }
 var staData=[
-{l:'مكتملة',c:'#10b981',k:'completed'},
-{l:'جارية',c:'#3b82f6',k:'in_progress'},
-{l:'انتظار',c:'#f59e0b',k:'pending'},
-{l:'مؤجلة',c:'#a855f7',k:'postponed'},
-{l:'ملغاة',c:'#64748b',k:'cancelled'}
+{l:t('doneCount'),c:'#10b981',k:'completed'},
+{l:t('inProgressCount'),c:'#3b82f6',k:'in_progress'},
+{l:t('waitingCount'),c:'#f59e0b',k:'pending'},
+{l:t('postponedCount'),c:'#a855f7',k:'postponed'},
+{l:t('staCancelled'),c:'#64748b',k:'cancelled'}
 ];
 var staCounts=staData.map(function(s){return tasks.filter(function(t){return (t._userStatus||t.status)===s.k;}).length;});
 var staTotal=staCounts.reduce(function(a,b){return a+b;},0);
@@ -6348,14 +6349,14 @@ xaxis:{categories:staData.map(function(s){return s.l;}),
 labels:{style:{fontSize:'12px',fontWeight:'700',fontFamily:"'Cairo','Tajawal',sans-serif",colors:staData.map(function(){return textClr2;})}},
 axisBorder:{show:false},axisTicks:{show:false}},
 yaxis:{min:0,forceNiceScale:true,
-title:{text:'عدد المهام',style:{fontSize:'12px',fontWeight:'600',fontFamily:"'Cairo','Tajawal',sans-serif",color:textClr2}},
+title:{text:t('taskCountAxis'),style:{fontSize:'12px',fontWeight:'600',fontFamily:"'Cairo','Tajawal',sans-serif",color:textClr2}},
 labels:{style:{fontSize:'11px',fontFamily:"'Cairo','Tajawal',sans-serif",colors:[textClr2]},formatter:function(v){return Math.round(v);}}},
 grid:{show:true,borderColor:gridClr2,strokeDashArray:4,position:'back',
 xaxis:{lines:{show:false}},yaxis:{lines:{show:true}},padding:{top:40,right:16,bottom:0,left:16}},
 stroke:{show:true,width:2,colors:['transparent']},
 tooltip:{enabled:true,shared:false,intersect:true,theme:isDark2?'dark':'light',
 style:{fontSize:'13px',fontFamily:"'Cairo','Tajawal',sans-serif"},
-y:{formatter:function(v){if(!v)return '';var pct=staTotal?Math.round(v/staTotal*100):0;return v+' مهمة ('+pct+'%)'}}},
+y:{formatter:function(v){if(!v)return '';var pct=staTotal?Math.round(v/staTotal*100):0;return v+' '+t('auto_f69daab9d2')+' ('+pct+'%)'}}},
 legend:{show:false},
 theme:{mode:isDark2?'dark':'light'},
 responsive:[
@@ -6406,10 +6407,10 @@ return '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;bo
 var pbEl=document.getElementById('emp-progress-bars');
 if(pbEl){
 var priGroups=[
-{l:'عاجل 🔴',k:'urgent',c:'#ef4444'},
-{l:'عالية 🟠',k:'high',c:'#f97316'},
-{l:'متوسطة 🟡',k:'medium',c:'#eab308'},
-{l:'منخفضة 🟢',k:'low',c:'#10b981'},
+{l:t('priUrgent')+' 🔴',k:'urgent',c:'#ef4444'},
+{l:t('priHigh')+' 🟠',k:'high',c:'#f97316'},
+{l:t('priMedium')+' 🟡',k:'medium',c:'#eab308'},
+{l:t('priLow')+' 🟢',k:'low',c:'#10b981'},
 ];
 pbEl.innerHTML=priGroups.map(function(pg){
 var grpTasks=tasks.filter(function(t){return t.priority===pg.k;});
@@ -6530,12 +6531,12 @@ const ov=tasks.filter(t=>t.deadline&&t.deadline<today()&&t.status!=='completed'&
 const avg=tasks.length?Math.round((done/tasks.length)*100):0;
 const post=tasks.filter(t=>t.status==='postponed').length;
 const cards=[
-{l:'مهامي',v:tasks.length,c:'#3b82f6',i:'📋',f:'all'},
-{l:'مكتملة',v:done,c:'#10b981',i:'✅',f:'completed'},
-{l:'جارية',v:inp,c:'#f97316',i:'🔄',f:'in_progress'},
-{l:'انتظار',v:pend,c:'#eab308',i:'⏳',f:'pending'},
-{l:'مؤجلة',v:post,c:'#a855f7',i:'⏸️',f:'postponed'},
-{l:'متوسط الإنجاز',v:avg+'%',c:'#8b5cf6',i:'📈',f:null}
+{l:t('myTasks'),v:tasks.length,c:'#3b82f6',i:'📋',f:'all'},
+{l:t('staCompleted'),v:done,c:'#10b981',i:'✅',f:'completed'},
+{l:t('staInProgress'),v:inp,c:'#f97316',i:'🔄',f:'in_progress'},
+{l:t('staPending'),v:pend,c:'#eab308',i:'⏳',f:'pending'},
+{l:t('staPostponed'),v:post,c:'#a855f7',i:'⏸️',f:'postponed'},
+{l:t('avgCompletion'),v:avg+'%',c:'#8b5cf6',i:'📈',f:null}
 ];
 try {
 const mainCards = cards.slice(0, cards.length - 1);
@@ -6549,7 +6550,7 @@ const renderCard = c => `
 </div>
 <div class="sc-icon-wrap"><span style="font-size:22px">${c.i}</span></div>
 </div>
-${c.f?`<div class="sc-footer" style="color:${c.c}">${t('clickToView')} <span class="sc-arrow">←</span></div>`:''}
+${c.f?`<div class="sc-footer" style="color:${c.c}">${t('clickToView')} <span class="sc-arrow">${LANG==='en'?'→':'←'}</span></div>`:''}
 </div>`;
 const avgRating = avg <= 25
 ? {label:t('ratingPoor'), color:'#ef4444', bg:'rgba(239,68,68,.28)'}
@@ -6577,10 +6578,10 @@ return '<text x="'+p.x.toFixed(1)+'" y="'+(p.y+yAdj).toFixed(1)+'" text-anchor="
 /* تسميات الدرجات خارج القوس — بين أرقام التدرج بنص ملوّن */
 const _gSecLabels=(function(){
 var secs=[
-{c:157.5, l:'ضعيف',  col:'#ef4444'},   /* 0–25%   بين 0 و25   */
-{c:112.5, l:'متوسط', col:'#f97316'},   /* 25–50%  بين 25 و50  */
-{c:67.5,  l:'جيد',   col:'#10b981'},   /* 50–75%  بين 50 و75  */
-{c:22.5,  l:'ممتاز', col:'#059669'}    /* 75–100% بين 75 و100 */
+{c:157.5, l:t('ratingPoor'),    col:'#ef4444'},   /* 0–25%   */
+{c:112.5, l:t('ratingAvg'),     col:'#f97316'},   /* 25–50%  */
+{c:67.5,  l:t('ratingGood'),    col:'#10b981'},   /* 50–75%  */
+{c:22.5,  l:t('ratingExcellent'),col:'#059669'}   /* 75–100% */
 ];
 return secs.map(function(s){
 var p=_gPol(s.c,122);  /* r=122 = خارج القوس (r=103) وخارج الأرقام (r=108) */
@@ -6593,7 +6594,7 @@ return '<text x="'+p.x.toFixed(1)+'" y="'+p.y.toFixed(1)+'" '
 const avgCard = `
 <div class="stat-card avg-gauge-card" style="padding:14px 12px;align-items:stretch">
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-<div class="sc-label" style="margin:0;font-size:10.5px">متوسط الإنجاز ليوم ${(function(){var d=new Date();return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();})()}</div>
+<div class="sc-label" style="margin:0;font-size:10.5px">${t('avgCompletion')} — ${(function(){var d=new Date();return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();})()}</div>
 <span style="font-size:10px;font-weight:800;padding:2px 9px;border-radius:99px;background:${avgRating.bg};color:${avgRating.color};white-space:nowrap;line-height:1.5">${avgRating.label}</span>
 </div>
 <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;margin-top:2px">
@@ -6630,8 +6631,8 @@ const _empOvCls = _empOvIsZero ? ' sc-overdue-ok' : '';
 const _empOvLbl = _empOvIsZero ? '#475569' : '#c53030';
 const _empOvVal = _empOvIsZero ? '#475569' : '#e53e3e';
 const _empOvIcon = _empOvIsZero ? '👌' : '🚨';
-const _empOvLabelTxt = _empOvIsZero ? '✅ لا متأخرات' : '⚠️ متأخرة (تحتاج إجراء)';
-const _empOvFooter = _empOvIsZero ? 'كل المهام في موعدها' : 'انقر للمراجعة الفورية';
+const _empOvLabelTxt = _empOvIsZero ? (LANG==='en'?'✅ No overdue':'✅ لا متأخرات') : (LANG==='en'?'⚠️ Overdue (needs action)':'⚠️ متأخرة (تحتاج إجراء)');
+const _empOvFooter = _empOvIsZero ? t('allOnSchedule') : t('clickForReview');
 const overdueCard = `
 <div class="stat-card sc-overdue${_empOvCls}" onclick="filterEmp('overdue')" style="cursor:pointer">
 <div class="sc-top">
@@ -7223,7 +7224,7 @@ _taskSnapshot[_tid] = _snap;
 }
 } catch(e){}
 })();
-function _statusLbl(s){var m={'pending':'⏳ انتظار','in_progress':'🔄 جارية','completed':'✅ مكتملة','postponed':'⏸️ مؤجلة','cancelled':'❌ ملغاة'};return m[s]||s||'—';}
+function _statusLbl(s){var m={'pending':t('staPendingEmoji'),'in_progress':t('staInProgressEmoji'),'completed':t('staCompletedEmoji'),'postponed':t('staPostponedEmoji'),'cancelled':t('staCancelledEmoji')};return m[s]||s||'—';}
 saveDB();
 const _te=$('t-title'),_se=$('t-start'),_de=$('t-deadline');
 if(_te)_te.style.borderColor='';
@@ -8114,10 +8115,10 @@ return ids.includes(CU.id);
 });
 if(!arch.length){notif('أرشيفك فارغ','err');return;}
 const BOM='\uFEFF';
-const hdr=['#','المهمة','الأولوية','تاريخ الإنجاز','تاريخ الأرشفة','نوع الأرشفة'].join(',');
-const priAr={urgent:'عاجل',high:'عالية',medium:'متوسطة',low:'منخفضة'};
+const hdr=['#',t('auto_f69daab9d2'),t('archivePriority'),t('archiveCompDate'),t('archiveArchDate'),t('typeCol')].join(',');
+const priAr={urgent:t('priUrgent'),high:t('priHigh'),medium:t('priMedium'),low:t('priLow')};
 const rows=arch.map(function(t,i){
-return [i+1,'"'+(t.title||'').replace(/"/g,'""')+'"',priAr[t.priority]||'—',t.completionDate||'—',(t.archivedAt||'').split('T')[0]||'—',t.archivedManually?'يدوي':'تلقائي'].join(',');
+return [i+1,'"'+(t.title||'').replace(/"/g,'""')+'"',priAr[t.priority]||'—',t.completionDate||'—',(t.archivedAt||'').split('T')[0]||'—',t.archivedManually?t('manualType'):t('autoType')].join(',');
 });
 const blob=new Blob([BOM+hdr+'\n'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
 const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='أرشيفي-'+today()+'.csv';a.click();
@@ -8547,7 +8548,7 @@ var plotW = data.length * groupTotalWidth + 20;
 var chartW = paddingLeft + plotW + paddingRight;
 var chartH = paddingTop + plotH + paddingBottom;
 var svg = '<svg viewBox="0 0 '+chartW+' '+chartH+'" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-width:100%;display:block">';
-svg += '<text x="-'+(paddingTop+plotH/2)+'" y="18" transform="rotate(-90)" text-anchor="middle" font-family="Cairo,Tajawal,sans-serif" font-size="9" font-weight="800" fill="#475569">عدد المهام</text>';
+svg += '<text x="-'+(paddingTop+plotH/2)+'" y="18" transform="rotate(-90)" text-anchor="middle" font-family="Cairo,Tajawal,sans-serif" font-size="9" font-weight="800" fill="#475569">'+t('taskCountAxis')+'</text>';
 var ticks = 5;
 for(var t=0; t<=ticks; t++){
 var y = paddingTop + plotH - (t * plotH / ticks);
@@ -8581,9 +8582,9 @@ svg += '<text x="'+nameX+'" y="'+(nameY+12)+'" text-anchor="middle" font-family=
 });
 svg += '</svg>';
 var legend = '<div style="display:flex;justify-content:center;gap:22px;flex-wrap:wrap;padding:3px 0 6px;border-bottom:1px solid #f1f5f9;margin-bottom:6px">'
-+ '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#475569"><span style="width:12px;height:12px;border-radius:4px;background:'+C_DONE+';print-color-adjust:exact;-webkit-print-color-adjust:exact"></span>✅ مكتملة</span>'
-+ '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#475569"><span style="width:12px;height:12px;border-radius:4px;background:'+C_INP+';print-color-adjust:exact;-webkit-print-color-adjust:exact"></span>🔄 جارية</span>'
-+ '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#475569"><span style="width:12px;height:12px;border-radius:4px;background:'+C_PEND+';print-color-adjust:exact;-webkit-print-color-adjust:exact"></span>⏳ انتظار</span>'
++ '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#475569"><span style="width:12px;height:12px;border-radius:4px;background:'+C_DONE+';print-color-adjust:exact;-webkit-print-color-adjust:exact"></span>'+t('staCompletedEmoji')+'</span>'
++ '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#475569"><span style="width:12px;height:12px;border-radius:4px;background:'+C_INP+';print-color-adjust:exact;-webkit-print-color-adjust:exact"></span>'+t('staInProgressEmoji')+'</span>'
++ '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#475569"><span style="width:12px;height:12px;border-radius:4px;background:'+C_PEND+';print-color-adjust:exact;-webkit-print-color-adjust:exact"></span>'+t('staPendingEmoji')+'</span>'
 + '</div>';
 var gaugeCols = Math.min(data.length, 4);
 var progSection = '<div style="margin-top:8px;padding-top:10px;border-top:1px dashed #e2e8f0">';
@@ -10993,7 +10994,7 @@ progress: task.progress || 0
 });
 }
 function _statusLabel(s){
-var m={'pending':'⏳ انتظار','in_progress':'🔄 جارية','completed':'✅ مكتملة','postponed':'⏸️ مؤجلة','cancelled':'❌ ملغاة'};
+var m={'pending':t('staPendingEmoji'),'in_progress':t('staInProgressEmoji'),'completed':t('staCompletedEmoji'),'postponed':t('staPostponedEmoji'),'cancelled':t('staCancelledEmoji')};
 return m[s]||s||'—';
 }
 function checkForTaskChanges(){
@@ -11424,10 +11425,10 @@ attachOpenTaskClick();
 log('All hooks active');
 }
 function statusLbl(s){
-return ({pending:'⏳ انتظار',in_progress:'🔄 جارية',completed:'✅ مكتملة',postponed:'⏸️ مؤجلة',cancelled:'❌ ملغاة'})[s] || s || '—';
+return ({pending:t('staPendingEmoji'),in_progress:t('staInProgressEmoji'),completed:t('staCompletedEmoji'),postponed:t('staPostponedEmoji'),cancelled:t('staCancelledEmoji')})[s] || s || '—';
 }
 function priorityLbl(p){
-return ({urgent:'🔴 عاجل',high:'🟠 عالية',medium:'🟡 متوسطة',low:'🟢 منخفضة'})[p] || p || '';
+return ({urgent:t('priUrgentEmoji'),high:t('priHighEmoji'),medium:t('priMediumEmoji'),low:t('priLowEmoji')})[p] || p || '';
 }
 function pushToCurrent(type, title, body, opts){
 try {
@@ -12417,11 +12418,11 @@ if(Array.isArray(t.assignedTo)) return t.assignedTo.some(function(x){ return Num
 return Number(t.assignedTo) === _cu;
 }
 function pickStatusLabel(s){
-var m={pending:'⏳ قيد الانتظار',in_progress:'🔄 جارية',completed:'✅ مكتملة',postponed:'⏸️ مؤجلة',cancelled:'❌ ملغاة'};
+var m={pending:t('staPendingEmoji'),in_progress:t('staInProgressEmoji'),completed:t('staCompletedEmoji'),postponed:t('staPostponedEmoji'),cancelled:t('staCancelledEmoji')};
 return m[s] || s || '—';
 }
 function pickPriorityLabel(p){
-var m={urgent:'🔴 عاجل',high:'🟠 عالية',medium:'🟡 متوسطة',low:'🟢 منخفضة'};
+var m={urgent:t('priUrgentEmoji'),high:t('priHighEmoji'),medium:t('priMediumEmoji'),low:t('priLowEmoji')};
 return m[p] || p || '—';
 }
 function snapshotTasks(){
