@@ -2332,7 +2332,7 @@ overdue:'⚠️ متأخرة', daysLeft:'يوم متبقٍ', today:'اليوم',
 excel:'📊 Excel', print:'🖨️ طباعة', management:'إدارة', employee:'موظف',
 warehouseMgmt:'إدارة المستودعات', tasksAndWork:'مهام وأعمال',
 loginTitle:'تسجيل الدخول', email:'البريد الإلكتروني', password:'كلمة المرور',
-login:'دخول', welcomeBack:'أهلاً بعودتك 👋🏼', switchAccount:'تسجيل دخول بحساب آخر',
+login:'دخول', welcomeBack:'أهلاً بعودتك 👋', switchAccount:'تسجيل دخول بحساب آخر',
 /* === v5: keys for status/priority badge labels (no emoji) === */
 staPending:'انتظار', staInProgress:'جارية', staCompleted:'مكتملة', staPostponed:'مؤجلة', staCancelled:'ملغاة',
 priUrgent:'عاجل', priHigh:'عالية', priMedium:'متوسطة', priLow:'منخفضة',
@@ -2774,7 +2774,7 @@ overdue:'⚠️ Overdue', daysLeft:'days left', today:'Today', tomorrow:'Tomorro
 excel:'📊 Excel', print:'🖨️ Print', management:'Manager', employee:'Employee',
 warehouseMgmt:'Warehouse Management', tasksAndWork:'Tasks & Work',
 loginTitle:'Sign In', email:'Email Address', password:'Password',
-login:'Sign In', welcomeBack:'Welcome back 👋🏼', switchAccount:'Sign in with another account',
+login:'Sign In', welcomeBack:'Welcome back 👋', switchAccount:'Sign in with another account',
 /* === v5: keys for status/priority badge labels === */
 staPending:'Pending', staInProgress:'In Progress', staCompleted:'Completed', staPostponed:'Postponed', staCancelled:'Cancelled',
 priUrgent:'Urgent', priHigh:'High', priMedium:'Medium', priLow:'Low',
@@ -3719,7 +3719,7 @@ var em=$('last-user-email');
 var er=$('email-row');
 if(wrap) wrap.style.display='block';
 if(er) er.style.display='none';
-if(loginTitleEl) loginTitleEl.textContent=isAr?'أهلاً بعودتك 👋🏼':'Welcome back 👋🏼';
+if(loginTitleEl) loginTitleEl.textContent=isAr?'أهلاً بعودتك 👋':'Welcome back 👋';
 if(avt){
 avt.textContent=getUserCode(u);
 avt.className='emp-badge '+_ebColor(u.id);
@@ -12819,6 +12819,189 @@ _wireFilterStickyTop();
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 4px !important;
   }
+}
+</style>
+
+<style id="v-ltr-mobile">
+/* ══════════════════════════════════════════════════════
+   LTR / English Mode — Full Mobile Override (v31)
+   Injected LAST so it wins over all earlier !important rules.
+   Targets html[dir="ltr"] to be completely safe in RTL mode.
+   ══════════════════════════════════════════════════════ */
+
+/* ── 1) Page body direction & base text alignment ──────── */
+html[dir="ltr"] body {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+/* ── 2) Sidebar: correct LEFT position + correct slide direction
+        across the FULL mobile/tablet range (≤1023px).
+        Previous blocks only covered ≤900px with !important on transform. ── */
+@media (max-width: 1023px) {
+  html[dir="ltr"] #tania-sidebar {
+    right: auto !important;
+    left: 0 !important;
+    transform: translateX(-110%) !important;
+    box-shadow: 8px 0 32px rgba(0,0,0,.25) !important;
+  }
+  html[dir="ltr"] #tania-sidebar.mobile-open,
+  html[dir="ltr"] #tania-sidebar.sb-visible,
+  html[dir="ltr"] #tania-sidebar.mobile-open.sb-visible {
+    transform: translateX(0) !important;
+  }
+}
+
+/* ── 3) Hamburger button: always top-LEFT in LTR mobile ── */
+@media (max-width: 1023px) {
+  html[dir="ltr"] #sb-hamburger {
+    right: auto !important;
+    left: 12px !important;
+  }
+}
+
+/* ── 4) Body margins: overlay mode → no push margin ──── */
+@media (max-width: 1023px) {
+  html[dir="ltr"] body.sb-on,
+  html[dir="ltr"] body.sb-col,
+  html[dir="ltr"] body.sb-on.sb-col,
+  html[dir="ltr"] body.sb-on.sb-col.sb-hovered {
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+  }
+  /* Header spans full width regardless */
+  html[dir="ltr"] .hdr {
+    right: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    direction: ltr !important;
+  }
+}
+
+/* ── 5) Page content: symmetric padding already correct,
+        but ensure direction is set for all page containers ── */
+@media (max-width: 1023px) {
+  html[dir="ltr"] .page:not(#pg-login),
+  html[dir="ltr"] [class*="pg-"]:not(#pg-login),
+  html[dir="ltr"] #mgr-ov, html[dir="ltr"] #mgr-tasks,
+  html[dir="ltr"] #mgr-arch, html[dir="ltr"] #mgr-emps,
+  html[dir="ltr"] #mgr-notes, html[dir="ltr"] #pg-emp {
+    direction: ltr !important;
+    text-align: left !important;
+  }
+}
+
+/* ── 6) Header user info: flip alignment in LTR ───────── */
+html[dir="ltr"] .hdr-user-info {
+  align-items: flex-start !important;
+  text-align: left !important;
+}
+
+/* ── 7) Stat cards: ensure correct flex direction in LTR ─ */
+html[dir="ltr"] .stat-card .sc-top {
+  flex-direction: row !important;
+}
+html[dir="ltr"] .stats-grid,
+html[dir="ltr"] #emp-stats {
+  direction: ltr !important;
+}
+
+/* ── 8) Tables: left-align in LTR ────────────────────── */
+html[dir="ltr"] table {
+  direction: ltr !important;
+  text-align: left !important;
+}
+html[dir="ltr"] table thead th {
+  text-align: left !important;
+}
+html[dir="ltr"] table tbody td {
+  text-align: left !important;
+}
+
+/* ── 9) Notification cards & panels: left-align in LTR ── */
+html[dir="ltr"] .ntf-card {
+  text-align: left !important;
+  direction: ltr !important;
+}
+html[dir="ltr"] .ntf-card .ntf-body,
+html[dir="ltr"] .ntf-card .ntf-title,
+html[dir="ltr"] .ntf-card .ntf-meta {
+  text-align: left !important;
+}
+
+/* ── 10) Filter bars & inputs: LTR layout ────────────── */
+html[dir="ltr"] .tfilter-bar,
+html[dir="ltr"] .notes-filter-bar,
+html[dir="ltr"] #chart-filter-bar {
+  direction: ltr !important;
+}
+html[dir="ltr"] .tfilter-search-input,
+html[dir="ltr"] .tfilter-date-input,
+html[dir="ltr"] .tfilter-select {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+/* ── 11) Empty states & data-empty: LTR ──────────────── */
+html[dir="ltr"] .empty-state,
+html[dir="ltr"] [data-empty] {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+/* ── 12) Modals: LTR layout ───────────────────────────── */
+html[dir="ltr"] .modal,
+html[dir="ltr"] .modal-body,
+html[dir="ltr"] .modal-hdr,
+html[dir="ltr"] .modal-ftr {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+/* ── 13) Sidebar active indicator: on LEFT edge in LTR ── */
+html[dir="ltr"] #tania-sidebar .sb-nav-item.active::before,
+html[dir="ltr"] #tania-sidebar .sb-nav-item[aria-current="true"]::before {
+  right: auto !important;
+  left: -8px !important;
+}
+
+/* ── 14) Sidebar tooltip arrows: flip to LEFT side ────── */
+html[dir="ltr"] #tania-sidebar.sb-col:not(.sb-hovered) .sb-item::before {
+  right: auto !important;
+  left: calc(100% + 12px) !important;
+}
+html[dir="ltr"] #tania-sidebar.sb-col:not(.sb-hovered) .sb-item::after {
+  right: auto !important;
+  left: calc(100% + 4px) !important;
+  border-right-color: transparent !important;
+  border-left-color: rgba(15,23,42,.92) !important;
+}
+
+/* ── 15) Scrollable containers: correct overflow direction ─ */
+@media (max-width: 640px) {
+  html[dir="ltr"] .tbl-wrap,
+  html[dir="ltr"] [class*="task-table"],
+  html[dir="ltr"] .table-responsive {
+    direction: ltr !important;
+  }
+  html[dir="ltr"] #chart-filter-controls {
+    direction: ltr !important;
+  }
+}
+
+/* ── 16) Tabs bar: LTR scroll direction ──────────────── */
+html[dir="ltr"] .tabs,
+html[dir="ltr"] .sec-tabs {
+  direction: ltr !important;
+}
+
+/* ── 17) Login page: keep centered regardless of dir ──── */
+html[dir="ltr"] #pg-login {
+  direction: ltr !important;
+}
+html[dir="ltr"] #pg-login > div,
+html[dir="ltr"] #pg-login .login-card {
+  text-align: left !important;
 }
 </style>
 </body>
