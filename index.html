@@ -10219,12 +10219,17 @@ window.empTab = wrappedEmp;
 }
 function sbLoad(){
 try{
+/* FIX-SB: always start expanded — clear any saved collapsed state so labels show */
 var stored = localStorage.getItem('sbCollapsed');
 if(stored === '1'){
-SB.collapsed = true;
-var sb = document.getElementById('tania-sidebar');
-if(sb) sb.classList.add('sb-col');
+/* Reset to expanded on first load after this update */
+localStorage.removeItem('sbCollapsed');
 }
+SB.collapsed = false;
+/* Ensure sidebar and body do NOT have sb-col on load */
+var _sbEl = document.getElementById('tania-sidebar');
+if(_sbEl){ _sbEl.classList.remove('sb-col'); _sbEl.classList.remove('sb-hovered'); }
+document.body.classList.remove('sb-col','sb-hovered');
 }catch(e){}
 if(document.readyState === 'loading'){
 document.addEventListener('DOMContentLoaded', _sbAttachHover);
