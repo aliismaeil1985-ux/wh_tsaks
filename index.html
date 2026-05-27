@@ -6308,7 +6308,7 @@ showPage('pg-emp');
 $('emp-name').textContent=CU.name;
 $('emp-dept').textContent=CU.title||CU.department||'';
 var _eAvt=$('emp-avt'); if(_eAvt){_eAvt.textContent=getUserCode(CU);_eAvt.className='emp-badge emp-badge-xl '+_ebColor(CU.id);}
-$('daily-date').textContent=t('dailyLogTitle')+today();
+var _dd=$('daily-date'); if(_dd) _dd.textContent=t('dailyLogTitle')+today();
 document.body.classList.remove('role-admin','role-manager');
 document.body.classList.add('role-employee');
 document.querySelectorAll('.sb-footer-btn').forEach(function(btn){
