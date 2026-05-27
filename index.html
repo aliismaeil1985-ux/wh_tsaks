@@ -1796,6 +1796,7 @@ return false;
 let _DEL = { tasks: [], notes: [], users: [] };
 let _lastSyncedSig = { tasksById:{}, notesById:{}, usersById:{} };
 let _suspendSnapshotMerge = 0; /* set briefly after our own write to dedupe echo */
+let _myWriteToken = ''; /* unique token per-write — identifies our own Firestore echoes */
 try{ const _dlRaw = localStorage.getItem('mDEL'); if(_dlRaw){ const _p = JSON.parse(_dlRaw); if(_p && typeof _p==='object'){ _DEL.tasks = Array.isArray(_p.tasks)?_p.tasks:[]; _DEL.notes = Array.isArray(_p.notes)?_p.notes:[]; _DEL.users = Array.isArray(_p.users)?_p.users:[]; } } }catch(_e){}
 
 function _itemSig(item){
@@ -2000,12 +2001,15 @@ function startSync(){
   syncListener = db_fire.collection('tania_db').doc('main')
     .onSnapshot(function(snap){
       if(!snap.exists) return;
-      if(_suspendSnapshotMerge && Date.now() < _suspendSnapshotMerge){
+      /* v47-SYNC-FIX: only suppress our OWN write echo (matched by _wt token),
+         never suppress updates written by a different user/device. */
+      const data = snap.data() || {};
+      if(_suspendSnapshotMerge && Date.now() < _suspendSnapshotMerge
+         && _myWriteToken && data._wt === _myWriteToken){
         try{ _captureSyncedSig(); }catch(_e){}
         return;
       }
       try{
-        const data = snap.data() || {};
         const remoteTasks = (Array.isArray(data.tasks) ? data.tasks : []).filter(function(t){ return !_isDemoTask(t); }).map(_normalizeTask);
         const remoteNotes = (Array.isArray(data.notes) ? data.notes : []).filter(function(n){ return !_isDemoNote(n); }).map(_normalizeNote);
         const remoteUsers = Array.isArray(data.users) ? data.users : [];
@@ -2348,6 +2352,8 @@ function saveDB(){
   const _snapDelN  = (_DEL.notes||[]).slice();
   const _snapDelU  = (_DEL.users||[]).slice();
   let _txResult = null; /* populated on successful tx; applied in .then() */
+  /* v47-SYNC-FIX: generate a unique token for this write so onSnapshot can identify our own echo */
+  _myWriteToken = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 
   db_fire.runTransaction(async function(tx){
     let server = null;
@@ -2358,7 +2364,8 @@ function saveDB(){
       tx.set(_docRef, {
         tasks: _snapTasks, notes: _snapNotes, users: _snapUsers,
         del_tasks: _snapDelT, del_notes: _snapDelN, del_users: _snapDelU,
-        updatedAt: new Date().toISOString(), updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown')
+        updatedAt: new Date().toISOString(), updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown'),
+        _wt: _myWriteToken
       });
       return;
     }
@@ -2385,7 +2392,8 @@ function saveDB(){
       tasks: mergedTasks, notes: mergedNotes, users: mergedUsers,
       del_tasks: mergedDelT, del_notes: mergedDelN, del_users: mergedDelU,
       updatedAt: new Date().toISOString(),
-      updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown')
+      updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown'),
+      _wt: _myWriteToken
     });
   }).then(function(){
     /* Transaction committed — NOW it is safe to update local state. */
@@ -2407,7 +2415,8 @@ function saveDB(){
       tasks: _snapTasks, notes: _snapNotes, users: _snapUsers,
       del_tasks: _snapDelT, del_notes: _snapDelN, del_users: _snapDelU,
       updatedAt: new Date().toISOString(),
-      updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown')
+      updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown'),
+      _wt: _myWriteToken
     }).then(function(){
       _suspendSnapshotMerge = Date.now() + 1500;
       _captureSyncedSig();
@@ -9884,12 +9893,22 @@ const _del=typeof _DEL!=='undefined'&&_DEL?_DEL:{tasks:[],notes:[],users:[]};
 db_fire.runTransaction(function(_tx){
   return _tx.get(_ref).then(function(doc){
     const srv=doc.exists?doc.data():{};
-    const mT=_mrg(_snap.tasks||[],srv.tasks||[],_del.tasks||[],srv._deletions_tasks||[]);
-    const mN=_mrg(_snap.notes||[],srv.notes||[],_del.notes||[],srv._deletions_notes||[]);
-    const mU=_mrg(_snap.users||[],srv.users||[],_del.users||[],srv._deletions_users||[]);
+    /* v47-SYNC-FIX: use correct tombstone field names (del_tasks not _deletions_tasks) */
+    const sDelT=Array.isArray(srv.del_tasks)?srv.del_tasks:[];
+    const sDelN=Array.isArray(srv.del_notes)?srv.del_notes:[];
+    const sDelU=Array.isArray(srv.del_users)?srv.del_users:[];
+    const mT=_mrg(_snap.tasks||[],srv.tasks||[],_del.tasks||[],sDelT);
+    const mN=_mrg(_snap.notes||[],srv.notes||[],_del.notes||[],sDelN);
+    const mU=_mrg(_snap.users||[],srv.users||[],_del.users||[],sDelU);
+    const mDelT=typeof _trimTombstones==='function'?_trimTombstones(typeof _mergeTombstones==='function'?_mergeTombstones(_del.tasks||[],sDelT):_del.tasks||[]):_del.tasks||[];
+    const mDelN=typeof _trimTombstones==='function'?_trimTombstones(typeof _mergeTombstones==='function'?_mergeTombstones(_del.notes||[],sDelN):_del.notes||[]):_del.notes||[];
+    const mDelU=typeof _trimTombstones==='function'?_trimTombstones(typeof _mergeTombstones==='function'?_mergeTombstones(_del.users||[],sDelU):_del.users||[]):_del.users||[];
+    const _wt2=typeof _myWriteToken!=='undefined'?_myWriteToken:('w'+Date.now().toString(36));
     _tx.set(_ref,{..._snap,tasks:mT,notes:mN,users:mU,
+      del_tasks:mDelT,del_notes:mDelN,del_users:mDelU,
       updatedAt:new Date().toISOString(),
       updatedBy:CU?.name||'unknown',
+      _wt:_wt2,
       lastUpdateSource:'CloudflarePages'});
   });
 }).then(function(){
@@ -12558,12 +12577,33 @@ return false;
 }
 setStatus('syncing', 'جاري الرفع...');
 try {
-await window.db_fire.collection('tania_db').doc('main').set({
-tasks: window.DB.tasks,
-notes: window.DB.notes,
-users: (window.DB.users||[]).filter(u=>!window.USERS.find(o=>o.id===u.id)),
-updatedAt: new Date().toISOString(),
-updatedBy: (window.CU && window.CU.name) || 'unknown'
+/* v47-SYNC-FIX: use runTransaction + _smartMerge to avoid overwriting concurrent changes */
+const _fpRef = window.db_fire.collection('tania_db').doc('main');
+const _fpToken = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+if(typeof _myWriteToken !== 'undefined') _myWriteToken = _fpToken;
+await window.db_fire.runTransaction(async function(_fpTx){
+  const _fpSnap = await _fpTx.get(_fpRef);
+  const srv = _fpSnap.exists ? (_fpSnap.data() || {}) : {};
+  const sDelT = Array.isArray(srv.del_tasks) ? srv.del_tasks : [];
+  const sDelN = Array.isArray(srv.del_notes) ? srv.del_notes : [];
+  const sDelU = Array.isArray(srv.del_users) ? srv.del_users : [];
+  const localDelT = (typeof _DEL!=='undefined' && Array.isArray(_DEL.tasks)) ? _DEL.tasks : [];
+  const localDelN = (typeof _DEL!=='undefined' && Array.isArray(_DEL.notes)) ? _DEL.notes : [];
+  const localDelU = (typeof _DEL!=='undefined' && Array.isArray(_DEL.users)) ? _DEL.users : [];
+  const _mrg = typeof _smartMerge==='function' ? _smartMerge : function(a,b){ return b||a; };
+  const mT = _mrg(window.DB.tasks||[], srv.tasks||[], localDelT, sDelT);
+  const mN = _mrg(window.DB.notes||[], srv.notes||[], localDelN, sDelN);
+  const mU = _mrg(window.DB.users||[], srv.users||[], localDelU, sDelU);
+  const mDelT = typeof _trimTombstones==='function' ? _trimTombstones(typeof _mergeTombstones==='function' ? _mergeTombstones(localDelT,sDelT) : localDelT) : localDelT;
+  const mDelN = typeof _trimTombstones==='function' ? _trimTombstones(typeof _mergeTombstones==='function' ? _mergeTombstones(localDelN,sDelN) : localDelN) : localDelN;
+  const mDelU = typeof _trimTombstones==='function' ? _trimTombstones(typeof _mergeTombstones==='function' ? _mergeTombstones(localDelU,sDelU) : localDelU) : localDelU;
+  _fpTx.set(_fpRef, {
+    tasks: mT, notes: mN, users: mU,
+    del_tasks: mDelT, del_notes: mDelN, del_users: mDelU,
+    updatedAt: new Date().toISOString(),
+    updatedBy: (window.CU && window.CU.name) || 'unknown',
+    _wt: _fpToken
+  });
 });
 if(window.CU && _ntfCol){
 try {
