@@ -7230,168 +7230,371 @@ try{
 function renderMgrDailyTimeline(){
   var container=document.getElementById('mgr-daily-content');
   if(!container) return;
-  var days=parseInt(container.getAttribute('data-days')||'14');
-  var selEmps=container._selEmps||null;
 
-  var isDark=document.documentElement.classList.contains('dark');
-  var txtColor=isDark?'#e2e8f0':'#1e293b';
-  var subColor=isDark?'#94a3b8':'#64748b';
-  var cardBg=isDark?'rgba(30,41,59,0.9)':'rgba(255,255,255,0.95)';
+  var days     = parseInt(container.getAttribute('data-days')||'14');
+  var selEmps  = container._selEmps || null;   // null = all
 
-  var allUsers=(DB&&DB.users&&DB.users.length?DB.users:USERS)||[];
-  var emps=allUsers.filter(function(u){return u.active!==false && (u.role==='employee'||u.role==='manager'||u.role==='admin');});
-  if(!emps.length){container.innerHTML='<div style="text-align:center;padding:60px;color:var(--tx3);font-size:14px;font-weight:700">لا يوجد موظفون</div>';return;}
+  var isDark   = document.documentElement.classList.contains('dark');
+  var txt      = isDark?'#e2e8f0':'#1e293b';
+  var sub      = isDark?'#94a3b8':'#64748b';
+  var card     = isDark?'#1e293b':'#ffffff';
+  var border   = isDark?'rgba(255,255,255,.08)':'rgba(0,0,0,.07)';
 
-  var activeIds=selEmps?selEmps:emps.map(function(u){return u.id;});
+  /* ── Users ── */
+  var allUsers = (DB&&DB.users&&DB.users.length ? DB.users : USERS) || [];
+  var emps = allUsers.filter(function(u){ return u.active!==false; });
+  if(!emps.length){
+    container.innerHTML='<div style="text-align:center;padding:80px 20px;color:'+sub+'"><div style="font-size:48px;margin-bottom:16px">👥</div><div style="font-size:15px;font-weight:700">لا يوجد موظفون</div></div>';
+    return;
+  }
 
-  /* Build dates */
+  var activeIds = selEmps ? selEmps : emps.map(function(u){return u.id;});
+
+  /* ── Dates ── */
   var dates=[];
   for(var d=days-1;d>=0;d--){
-    var dt=new Date();dt.setDate(dt.getDate()-d);
+    var dt=new Date(); dt.setDate(dt.getDate()-d);
     dates.push(dt.toISOString().split('T')[0]);
   }
 
-  var palette=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#14b8a6','#6366f1','#84cc16','#a855f7'];
-  var series=[];
-  var summaryRows=[];
+  /* ── Palette ── */
+  var PAL=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#14b8a6','#6366f1','#84cc16','#a855f7'];
 
+  /* ── Build per-employee data ── */
+  var series=[], summary=[];
   emps.forEach(function(u,idx){
-    var col=palette[idx%palette.length];
-    var dayPcts=dates.map(function(ds){
-      var tasks=(DB.tasks||[]).filter(function(t){
-        var asgn=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];
-        return asgn.indexOf(u.id)!==-1 && t.deadline===ds;
+    var col = PAL[idx % PAL.length];
+
+    /* daily % points */
+    var pts = dates.map(function(ds){
+      var due = (DB.tasks||[]).filter(function(t){
+        var a=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];
+        return a.indexOf(u.id)!==-1 && t.deadline===ds;
       });
-      if(!tasks.length) return null;
-      var done=tasks.filter(function(t){return getTaskStatusForUser(t,u.id)==='completed';}).length;
-      return Math.round(done/tasks.length*100);
+      if(!due.length) return null;
+      var done=due.filter(function(t){return getTaskStatusForUser(t,u.id)==='completed';}).length;
+      return Math.round(done/due.length*100);
     });
 
-    var periodTasks=(DB.tasks||[]).filter(function(t){
-      var asgn=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];
-      return asgn.indexOf(u.id)!==-1 && dates.indexOf(t.deadline)!==-1;
+    /* period totals */
+    var pTasks=(DB.tasks||[]).filter(function(t){
+      var a=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];
+      return a.indexOf(u.id)!==-1 && dates.indexOf(t.deadline)!==-1;
     });
-    var periodDone=periodTasks.filter(function(t){return getTaskStatusForUser(t,u.id)==='completed';}).length;
-    var pct=periodTasks.length?Math.round(periodDone/periodTasks.length*100):null;
+    var pDone=pTasks.filter(function(t){return getTaskStatusForUser(t,u.id)==='completed';}).length;
+    var pct = pTasks.length ? Math.round(pDone/pTasks.length*100) : null;
 
-    summaryRows.push({u:u,col:col,due:periodTasks.length,done:periodDone,pct:pct});
-
-    if(activeIds.indexOf(u.id)!==-1){
-      series.push({name:u.name,data:dayPcts,color:col});
-    }
+    summary.push({u:u, col:col, due:pTasks.length, done:pDone, pct:pct});
+    if(activeIds.indexOf(u.id)!==-1)
+      series.push({name:u.name, data:pts, color:col});
   });
 
-  /* === HTML === */
-  var html='<div style="padding:16px 20px">';
+  /* ── KPI totals ── */
+  var visSum = summary.filter(function(s){return activeIds.indexOf(s.u.id)!==-1;});
+  var totDue=0,totDone=0;
+  visSum.forEach(function(s){totDue+=s.due;totDone+=s.done;});
+  var totPct = totDue ? Math.round(totDone/totDue*100) : 0;
+  var pctClr = totPct>=80?'#10b981':totPct>=60?'#f59e0b':'#ef4444';
 
-  /* Header */
-  html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:18px">'
-    +'<div>'
-    +'<div style="font-family:\'Reem Kufi\',\'Almarai\',sans-serif;font-size:clamp(18px,2.5vw,28px);font-weight:700;background:linear-gradient(135deg,#1e40af,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">📅 الإنجاز اليومي بالموظف</div>'
-    +'<div style="font-size:12px;color:'+subColor+';margin-top:3px">مخطط زمني لنسبة إنجاز كل موظف خلال الفترة المحددة</div>'
-    +'</div>'
-    +'<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  /* ── Helper: rating ── */
+  function ratingInfo(p){
+    if(p===null) return {l:'—',   bg:'rgba(148,163,184,.1)', c:'#94a3b8'};
+    if(p>=80)    return {l:'ممتاز', bg:'rgba(16,185,129,.12)', c:'#10b981'};
+    if(p>=60)    return {l:'جيد',   bg:'rgba(245,158,11,.12)', c:'#f59e0b'};
+    if(p>=40)    return {l:'متوسط', bg:'rgba(59,130,246,.12)', c:'#3b82f6'};
+                 return {l:'ضعيف',  bg:'rgba(239,68,68,.12)',  c:'#ef4444'};
+  }
+
+  /* ═══════════════════════════════════ HTML ═══════════════════════════════════ */
+  var H='';
+
+  /* ── Banner ── */
+  H+='<div style="background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 50%,#7c3aed 100%);border-radius:18px;padding:24px 28px 22px;margin-bottom:20px;position:relative;overflow:hidden">';
+  H+='<div style="position:absolute;top:-30px;left:-30px;width:180px;height:180px;background:rgba(255,255,255,.05);border-radius:50%"></div>';
+  H+='<div style="position:absolute;bottom:-40px;right:60px;width:220px;height:220px;background:rgba(255,255,255,.04);border-radius:50%"></div>';
+  H+='<div style="position:relative;z-index:1">';
+  H+='<div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:.08em;margin-bottom:4px;font-family:\'Almarai\',sans-serif">📅 لوحة تحكم المدير</div>';
+  H+='<div style="font-size:clamp(20px,2.8vw,30px);font-weight:900;color:#fff;font-family:\'Reem Kufi\',\'Almarai\',sans-serif;margin-bottom:14px">الإنجاز اليومي بالموظف</div>';
+
+  /* KPI mini cards inside banner */
+  H+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">';
+  var kpis=[
+    {l:'الموظفون',v:visSum.length+'',ic:'👥',c:'rgba(99,102,241,.7)'},
+    {l:'إجمالي المهام',v:totDue+'',ic:'📋',c:'rgba(59,130,246,.7)'},
+    {l:'المنجزة',v:totDone+'',ic:'✅',c:'rgba(16,185,129,.7)'},
+    {l:'معدل الإنجاز',v:totPct+'%',ic:'📈',c:'rgba(245,158,11,.7)'}
+  ];
+  kpis.forEach(function(k){
+    H+='<div style="background:rgba(255,255,255,.1);backdrop-filter:blur(10px);border-radius:12px;padding:10px 12px;border:1px solid rgba(255,255,255,.15)">';
+    H+='<div style="font-size:18px;margin-bottom:4px">'+k.ic+'</div>';
+    H+='<div style="font-size:18px;font-weight:900;color:#fff;line-height:1">'+k.v+'</div>';
+    H+='<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:3px;font-family:\'Cairo\',sans-serif">'+k.l+'</div>';
+    H+='</div>';
+  });
+  H+='</div></div></div>';
+
+  /* ── Filters row ── */
+  H+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:stretch">';
+
+  /* Date range */
+  H+='<div style="background:'+card+';border:1px solid '+border+';border-radius:14px;padding:12px 14px;flex:1;min-width:200px">';
+  H+='<div style="font-size:10px;font-weight:800;color:'+sub+';letter-spacing:.06em;margin-bottom:8px;font-family:\'Almarai\',sans-serif">⏱ الفترة الزمنية</div>';
+  H+='<div style="display:flex;gap:5px;flex-wrap:wrap">';
   [7,14,30,60].forEach(function(n){
     var act=days===n;
-    html+='<button onclick="(function(){var el=document.getElementById(\'mgr-daily-content\');if(el){el.setAttribute(\'data-days\','+n+');renderMgrDailyTimeline();}})();" style="padding:5px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'Cairo\',sans-serif;transition:all .15s;border:none;'+(act?'background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.35)':'background:var(--stat);color:var(--tx2);border:1px solid var(--border)')+'">'+( n===7?'٧ أيام':n===14?'١٤ يوم':n===30?'٣٠ يوم':'٦٠ يوم')+'</button>';
+    H+='<button onclick="(function(){var e=document.getElementById(\'mgr-daily-content\');if(e){e.setAttribute(\'data-days\','+n+');renderMgrDailyTimeline();}})();" '
+     +'style="padding:6px 14px;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'Cairo\',sans-serif;border:none;transition:all .2s;'
+     +(act?'background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.35)'
+          :'background:var(--stat);color:var(--tx2);border:1px solid var(--border)')
+     +'">'+{7:'٧ أيام',14:'١٤ يوم',30:'٣٠ يوم',60:'٦٠ يوم'}[n]+'</button>';
   });
-  html+='</div></div>';
+  H+='</div></div>';
 
   /* Employee filter */
-  html+='<div style="background:'+cardBg+';border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px">'
-    +'<div style="font-size:11px;font-weight:800;color:'+subColor+';margin-bottom:8px;display:flex;align-items:center;gap:6px">👥 تصفية الموظفين <span style="font-weight:400;color:var(--tx3)">— اضغط لإظهار/إخفاء</span></div>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:7px">';
-
-  /* "الكل" button */
-  var allSel=selEmps===null;
-  html+='<button onclick="(function(){var el=document.getElementById(\'mgr-daily-content\');if(el){el._selEmps=null;renderMgrDailyTimeline();}})();" style="padding:5px 13px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'Cairo\',sans-serif;border:2px solid #3b82f6;transition:all .15s;'+(allSel?'background:#3b82f6;color:#fff':'background:transparent;color:#3b82f6')+'">الكل</button>';
-
+  H+='<div style="background:'+card+';border:1px solid '+border+';border-radius:14px;padding:12px 14px;flex:2;min-width:260px">';
+  H+='<div style="font-size:10px;font-weight:800;color:'+sub+';letter-spacing:.06em;margin-bottom:8px;font-family:\'Almarai\',sans-serif">👥 الموظفون</div>';
+  H+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  var allSel = selEmps===null;
+  H+='<button onclick="(function(){var e=document.getElementById(\'mgr-daily-content\');if(e){e._selEmps=null;renderMgrDailyTimeline();}})();" '
+   +'style="padding:5px 14px;border-radius:20px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'Cairo\',sans-serif;border:2px solid #3b82f6;transition:all .2s;'
+   +(allSel?'background:#3b82f6;color:#fff':'background:transparent;color:#3b82f6')+'">الكل</button>';
+  var allIds=emps.map(function(e){return e.id;}).join(',');
   emps.forEach(function(u,idx){
-    var col=palette[idx%palette.length];
-    var isOn=activeIds.indexOf(u.id)!==-1;
-    var allIds=emps.map(function(e){return e.id;}).join(',');
-    html+='<button onclick="(function(){'
-      +'var el=document.getElementById(\'mgr-daily-content\');'
-      +'if(!el) return;'
-      +'var cur=el._selEmps?el._selEmps.slice():['+allIds+'];'
-      +'var i=cur.indexOf('+u.id+');'
-      +'if(i===-1){cur.push('+u.id+');}else if(cur.length>1){cur.splice(i,1);}'
-      +'el._selEmps=cur;'
-      +'renderMgrDailyTimeline();'
-      +'})();" '
-      +'style="padding:5px 13px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'Cairo\',sans-serif;border:2px solid '+col+';transition:all .15s;'+(isOn?'background:'+col+';color:#fff':'background:transparent;color:'+col)+'">'+escHtml(u.name)+'</button>';
+    var col=PAL[idx%PAL.length], isOn=activeIds.indexOf(u.id)!==-1;
+    H+='<button onclick="(function(){'
+     +'var e=document.getElementById(\'mgr-daily-content\');if(!e)return;'
+     +'var c=e._selEmps?e._selEmps.slice():['+allIds+'];'
+     +'var i=c.indexOf('+u.id+');'
+     +'if(i===-1){c.push('+u.id+');}else if(c.length>1){c.splice(i,1);}'
+     +'e._selEmps=c;renderMgrDailyTimeline();'
+     +'})();" '
+     +'style="padding:5px 14px;border-radius:20px;font-size:11px;font-weight:800;cursor:pointer;font-family:\'Cairo\',sans-serif;border:2px solid '+col+';transition:all .2s;'
+     +(isOn?'background:'+col+';color:#fff':'background:transparent;color:'+col)+'">'+escHtml(u.name)+'</button>';
   });
-  html+='</div></div>';
+  H+='</div></div>';
+  H+='</div>';
 
-  /* Chart */
-  html+='<div style="background:'+cardBg+';border:1px solid var(--border);border-radius:14px;padding:16px 14px;margin-bottom:14px">'
-    +'<div style="font-size:13px;font-weight:800;color:'+txtColor+';margin-bottom:10px">📈 مخطط نسبة الإنجاز اليومي</div>'
-    +'<div id="mgr-emp-timeline-chart"></div>'
-    +'</div>';
+  /* ── Chart container ── */
+  /* chart wrapper always dark like financial terminal */
+  H+='<div style="background:#0f172a;border:1px solid rgba(99,102,241,.25);border-radius:16px;padding:18px 14px 10px;margin-bottom:16px;box-shadow:0 8px 32px rgba(0,0,0,.25)">';
+  H+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;padding:0 4px">';
+  H+='<div>'
+   +'<div style="font-size:13px;font-weight:900;color:#e2e8f0">📈 مخطط الإنجاز اليومي</div>'
+   +'<div style="font-size:10px;color:#64748b;margin-top:2px">الأعمدة = مهام اليوم / المنجزة &nbsp;·&nbsp; الخطوط = نسبة إنجاز كل موظف</div>'
+   +'</div>'
+   +'<div style="text-align:left">'
+   +'<div style="font-size:26px;font-weight:900;color:'+pctClr+';line-height:1">'+totPct+'%</div>'
+   +'<div style="font-size:9px;color:#64748b">معدل عام</div>'
+   +'</div>';
+  H+='</div>';
+  H+='<div id="mgr-emp-timeline-chart"></div>';
+  H+='</div>';
 
-  /* Summary table */
-  var summaryVisible=summaryRows.filter(function(s){return activeIds.indexOf(s.u.id)!==-1;});
-  html+='<div style="background:'+cardBg+';border:1px solid var(--border);border-radius:14px;overflow:hidden">'
-    +'<div style="padding:12px 14px;font-size:13px;font-weight:800;color:'+txtColor+';border-bottom:1px solid var(--border)">📋 ملخص أداء الموظفين خلال الفترة</div>'
-    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
-    +'<thead><tr style="background:var(--stat)">'
-    +'<th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:800;color:'+subColor+'">الموظف</th>'
-    +'<th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">المهام</th>'
-    +'<th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">المنجزة</th>'
-    +'<th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">المتأخرة</th>'
-    +'<th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">النسبة</th>'
-    +'<th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">التقييم</th>'
-    +'</tr></thead><tbody>';
+  /* ── Summary table ── */
+  H+='<div style="background:'+card+';border:1px solid '+border+';border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.04)">';
+  H+='<div style="padding:14px 18px;border-bottom:1px solid '+border+';display:flex;justify-content:space-between;align-items:center">';
+  H+='<div style="font-size:14px;font-weight:900;color:'+txt+'">📊 ملخص أداء الموظفين</div>';
+  H+='<div style="font-size:11px;color:'+sub+'">الفترة: آخر '+days+' يوم</div>';
+  H+='</div>';
+  H+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">';
+  H+='<thead><tr style="background:var(--stat)">';
+  ['#','الموظف','المهام','المنجزة','المتأخرة','النسبة','التقييم'].forEach(function(h,i){
+    H+='<th style="padding:10px '+(i===0?'8px':'12px')+';text-align:'+(i<=1?'right':'center')+';font-size:10.5px;font-weight:800;color:'+sub+';white-space:nowrap">'+h+'</th>';
+  });
+  H+='</tr></thead><tbody>';
 
-  summaryVisible.forEach(function(s){
-    var pClr=s.pct===null?'#94a3b8':s.pct>=80?'#10b981':s.pct>=60?'#f59e0b':'#ef4444';
-    var rating=s.pct===null?'—':s.pct>=80?'ممتاز':s.pct>=60?'جيد':s.pct>=40?'متوسط':'ضعيف';
-    var rBg=s.pct===null?'rgba(148,163,184,.12)':s.pct>=80?'rgba(16,185,129,.12)':s.pct>=60?'rgba(245,158,11,.12)':s.pct>=40?'rgba(59,130,246,.12)':'rgba(239,68,68,.12)';
+  /* sort by pct desc */
+  var sorted=visSum.slice().sort(function(a,b){
+    return (b.pct===null?-1:b.pct) - (a.pct===null?-1:a.pct);
+  });
+
+  sorted.forEach(function(s,rank){
+    var ri=ratingInfo(s.pct);
     var missed=s.due-s.done;
-    html+='<tr style="border-bottom:1px solid var(--border)">'
-      +'<td style="padding:10px 12px"><div style="display:flex;align-items:center;gap:8px">'
-      +'<div style="width:12px;height:12px;border-radius:50%;background:'+s.col+';flex-shrink:0"></div>'
-      +'<span style="font-size:13px;font-weight:700;color:'+txtColor+'">'+escHtml(s.u.name)+'</span>'
-      +'</div></td>'
-      +'<td style="padding:10px 12px;text-align:center;font-weight:700;color:#3b82f6;font-size:14px">'+s.due+'</td>'
-      +'<td style="padding:10px 12px;text-align:center;font-weight:700;color:#10b981;font-size:14px">'+s.done+'</td>'
-      +'<td style="padding:10px 12px;text-align:center;font-weight:700;color:#ef4444;font-size:14px">'+missed+'</td>'
-      +'<td style="padding:10px 12px;text-align:center"><span style="font-size:16px;font-weight:900;color:'+pClr+'">'+(s.pct!==null?s.pct+'%':'—')+'</span></td>'
-      +'<td style="padding:10px 12px;text-align:center"><span style="font-size:11px;font-weight:800;padding:3px 11px;border-radius:99px;background:'+rBg+';color:'+pClr+'">'+rating+'</span></td>'
-      +'</tr>';
+    var medal=rank===0&&s.due>0?'🥇':rank===1&&s.due>0?'🥈':rank===2&&s.due>0?'🥉':'';
+    H+='<tr style="border-bottom:1px solid '+border+';transition:background .15s" onmouseover="this.style.background=\'var(--stat)\'" onmouseout="this.style.background=\'\'">';
+    H+='<td style="padding:11px 8px;text-align:center;font-size:16px">'+(medal||'<span style="font-size:11px;color:'+sub+'">'+(rank+1)+'</span>')+'</td>';
+    H+='<td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:9px">'
+     +'<div style="width:10px;height:32px;border-radius:4px;background:'+s.col+'"></div>'
+     +'<div><div style="font-size:13px;font-weight:800;color:'+txt+'">'+escHtml(s.u.name)+'</div>'
+     +'<div style="font-size:10px;color:'+sub+'">'+escHtml(s.u.department||s.u.title||'')+'</div></div>'
+     +'</div></td>';
+    H+='<td style="padding:11px 12px;text-align:center;font-size:15px;font-weight:900;color:#3b82f6">'+s.due+'</td>';
+    H+='<td style="padding:11px 12px;text-align:center;font-size:15px;font-weight:900;color:#10b981">'+s.done+'</td>';
+    H+='<td style="padding:11px 12px;text-align:center;font-size:15px;font-weight:900;color:'+(missed>0?'#ef4444':'#94a3b8')+'">'+missed+'</td>';
+    H+='<td style="padding:11px 12px;text-align:center">'
+     +'<div style="display:inline-flex;align-items:center;gap:4px">'
+     +'<div style="width:52px;height:6px;border-radius:99px;background:var(--stat);overflow:hidden">'
+     +'<div style="height:100%;border-radius:99px;background:'+ri.c+';width:'+(s.pct||0)+'%;transition:width .6s ease"></div>'
+     +'</div>'
+     +'<span style="font-size:14px;font-weight:900;color:'+ri.c+';min-width:38px">'+(s.pct!==null?s.pct+'%':'—')+'</span>'
+     +'</div></td>';
+    H+='<td style="padding:11px 12px;text-align:center"><span style="font-size:11px;font-weight:800;padding:3px 12px;border-radius:99px;background:'+ri.bg+';color:'+ri.c+'">'+ri.l+'</span></td>';
+    H+='</tr>';
   });
-  if(!summaryVisible.length){
-    html+='<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--tx3);font-size:13px">لا توجد بيانات في هذه الفترة</td></tr>';
+  if(!sorted.length){
+    H+='<tr><td colspan="7" style="text-align:center;padding:50px 20px;color:'+sub+'"><div style="font-size:36px;margin-bottom:10px">📭</div><div style="font-size:13px;font-weight:700">لا توجد مهام في هذه الفترة</div></td></tr>';
   }
-  html+='</tbody></table></div></div>';
-  html+='</div>';
+  H+='</tbody></table></div></div>';
 
-  container.innerHTML=html;
+  /* inject */
+  container.innerHTML = H;
 
-  /* Render ApexCharts line chart */
-  try{
-    var chartEl=document.getElementById('mgr-emp-timeline-chart');
-    if(!chartEl||typeof ApexCharts==='undefined') return;
-    if(container._apexInst2){container._apexInst2.destroy();container._apexInst2=null;}
+  /* ── Render ApexCharts mixed (bar + line) — dark financial style ── */
+  requestAnimationFrame(function(){
+    setTimeout(function(){
+      try{
+        var el=document.getElementById('mgr-emp-timeline-chart');
+        if(!el||typeof ApexCharts==='undefined') return;
+        if(container._apexInst2){container._apexInst2.destroy();container._apexInst2=null;}
 
-    var dispDates=dates.map(function(ds){return ds.split('-').reverse().slice(0,2).join('/');});
-    var chartOpts={
-      chart:{type:'line',height:300,background:'transparent',fontFamily:"'Cairo','Tajawal',sans-serif",toolbar:{show:false},animations:{enabled:true,speed:700},zoom:{enabled:false}},
-      series:series,
-      stroke:{curve:'smooth',width:2.5},
-      markers:{size:3,hover:{size:6}},
-      xaxis:{categories:dispDates,labels:{style:{fontSize:'10px',fontFamily:"'Cairo',sans-serif",colors:Array(dates.length).fill(subColor)},rotate:-30},axisBorder:{show:false},axisTicks:{show:false}},
-      yaxis:{min:0,max:100,tickAmount:5,labels:{style:{fontSize:'10px',colors:[subColor]},formatter:function(v){return v+'%';}}},
-      tooltip:{y:{formatter:function(v){return v!==null?v+'%':'لا مهام';}},shared:true,intersect:false,theme:isDark?'dark':'light'},
-      legend:{show:true,position:'top',fontFamily:"'Cairo',sans-serif",fontSize:'11px',labels:{colors:[txtColor]}},
-      grid:{borderColor:isDark?'rgba(148,163,184,.12)':'rgba(0,0,0,.05)',strokeDashArray:4},
-      fill:{type:'gradient',gradient:{shadeIntensity:.15,opacityFrom:1,opacityTo:1}},
-      theme:{mode:isDark?'dark':'light'},
-      noData:{text:'لا توجد مهام في هذه الفترة',style:{fontSize:'13px',fontFamily:"'Cairo',sans-serif",color:subColor}}
-    };
-    container._apexInst2=new ApexCharts(chartEl,chartOpts);
-    container._apexInst2.render();
-  }catch(e){console.warn('mgr timeline chart err:',e.message);}
+        var dispDates=dates.map(function(ds){
+          var p=ds.split('-'); return p[2]+'/'+p[1];
+        });
+
+        /* build per-day totals across selected employees */
+        var barDue=[], barDone=[];
+        dates.forEach(function(ds){
+          var due=0,done=0;
+          emps.forEach(function(u){
+            if(activeIds.indexOf(u.id)===-1) return;
+            var tasks=(DB.tasks||[]).filter(function(t){
+              var a=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];
+              return a.indexOf(u.id)!==-1 && t.deadline===ds;
+            });
+            due+=tasks.length;
+            done+=tasks.filter(function(t){return getTaskStatusForUser(t,u.id)==='completed';}).length;
+          });
+          barDue.push(due);
+          barDone.push(done);
+        });
+
+        /* line series: one per visible employee (% per day) */
+        var lineSeries=series.map(function(s){
+          return {name:s.name, type:'line', data:s.data, color:s.color};
+        });
+
+        var allSeries=[
+          {name:'مهام اليوم', type:'bar',  data:barDue,  color:'rgba(59,130,246,.55)'},
+          {name:'المنجزة',    type:'bar',  data:barDone, color:'rgba(16,185,129,.75)'}
+        ].concat(lineSeries);
+
+        /* yaxis: left=count bars, right=% lines */
+        var maxDue=Math.max.apply(null,barDue.concat([1]));
+        var yaxes=[
+          {seriesName:'مهام اليوم', opposite:false, labels:{style:{fontSize:'10px',colors:['rgba(148,163,184,.8)']},formatter:function(v){return Math.round(v)+'';}}},
+          {seriesName:'المنجزة',    show:false},
+        ];
+        lineSeries.forEach(function(){
+          yaxes.push({opposite:true,min:0,max:100,tickAmount:4,labels:{style:{fontSize:'9px',colors:['rgba(148,163,184,.7)']},formatter:function(v){return v+'%';}}});
+        });
+        if(lineSeries.length>1) for(var i=1;i<lineSeries.length;i++) yaxes[2+i]={show:false,opposite:true,min:0,max:100};
+
+        /* ── build 3 bar series + employee lines ── */
+        var missedArr=barDue.map(function(v,i){return v-barDone[i];});
+
+        var barSeries=[
+          {name:'إجمالي المهام', type:'bar',  data:barDue,    color:'rgba(56,189,248,.35)'},
+          {name:'المنجزة',       type:'bar',  data:barDone,   color:'rgba(52,211,153,.85)'},
+          {name:'المتأخرة',      type:'bar',  data:missedArr, color:'rgba(248,113,113,.85)'}
+        ];
+        var finalSeries = barSeries.concat(lineSeries);
+        var strokeWidths = finalSeries.map(function(s){return s.type==='line'?2.8:0;});
+        var markerSizes  = finalSeries.map(function(s){return s.type==='line'?5:0;});
+        var fillTypes    = finalSeries.map(function(s){return s.type==='line'?'solid':'gradient';});
+
+        /* yaxis for bars (left) + lines (right, 0-100%) */
+        var mxDue = Math.max.apply(null, barDue.concat([1]));
+        var finalYaxis=[
+          /* bars left axis */
+          {seriesName:'إجمالي المهام', min:0, max:Math.ceil(mxDue*1.3),
+           labels:{style:{fontSize:'10px',colors:['rgba(148,163,184,.6)']},formatter:function(v){return Math.round(v)+'';}}},
+          {seriesName:'المنجزة',   show:false},
+          {seriesName:'المتأخرة', show:false}
+        ];
+        lineSeries.forEach(function(s,i){
+          finalYaxis.push({opposite:true,min:0,max:100,tickAmount:4,
+            show:i===0,
+            labels:{style:{fontSize:'9px',colors:['rgba(148,163,184,.6)']},formatter:function(v){return v+'%';}}
+          });
+        });
+
+        var opts={
+          chart:{
+            type:'bar', height:320, background:'#070e1a',
+            fontFamily:"'Cairo','Tajawal',sans-serif",
+            toolbar:{show:false},
+            animations:{enabled:true,speed:900,easing:'easeinout'},
+            zoom:{enabled:false},
+            dropShadow:{
+              enabled:true, enabledOnSeries:finalSeries.map(function(s,i){return s.type==='line'?i:-1;}).filter(function(i){return i>=0;}),
+              top:0, left:0, blur:10, color:'#38bdf8', opacity:.55
+            }
+          },
+          series: finalSeries,
+          plotOptions:{
+            bar:{
+              borderRadius:3,
+              columnWidth:'68%',
+              dataLabels:{position:'top'}
+            }
+          },
+          dataLabels:{enabled:false},
+          stroke:{width:strokeWidths, curve:'smooth'},
+          markers:{
+            size:markerSizes,
+            strokeWidth:2,
+            strokeColors:'#070e1a',
+            hover:{size:8},
+            fillOpacity:1
+          },
+          fill:{
+            type:fillTypes,
+            gradient:{
+              shade:'dark', type:'vertical',
+              shadeIntensity:.5,
+              opacityFrom:function(i){return i===0?.5:.85;},
+              opacityTo:function(i){return i===0?.15:.55;},
+              stops:[0,85,100]
+            }
+          },
+          colors:finalSeries.map(function(s){return s.color;}),
+          xaxis:{
+            categories:dispDates,
+            labels:{style:{fontSize:'10px',fontFamily:"'Cairo',sans-serif",colors:'rgba(148,163,184,.75)'},rotate:-30},
+            axisBorder:{show:false},
+            axisTicks:{show:true, color:'rgba(148,163,184,.12)'},
+            crosshairs:{show:true, stroke:{color:'rgba(56,189,248,.35)', width:1, dashArray:3}}
+          },
+          yaxis: finalYaxis,
+          tooltip:{
+            shared:true, intersect:false, theme:'dark',
+            style:{fontFamily:"'Cairo',sans-serif", fontSize:'12px'},
+            y:{formatter:function(v,o){
+              if(v===null||v===undefined) return '—';
+              return o.seriesIndex>=3 ? Math.round(v)+'%' : Math.round(v)+'';
+            }}
+          },
+          legend:{
+            show:true, position:'top',
+            fontFamily:"'Cairo',sans-serif", fontSize:'11px',
+            labels:{colors:'rgba(226,232,240,.85)'},
+            markers:{radius:3, width:10, height:10}
+          },
+          grid:{
+            borderColor:'rgba(148,163,184,.07)',
+            strokeDashArray:4,
+            xaxis:{lines:{show:false}},
+            padding:{top:4, right:16, bottom:0, left:4}
+          },
+          theme:{mode:'dark'},
+          noData:{text:'لا توجد مهام في هذه الفترة',style:{fontSize:'13px',fontFamily:"'Cairo',sans-serif",color:'#475569'}}
+        };
+        container._apexInst2 = new ApexCharts(el, opts); /* uses finalSeries inside opts */
+        container._apexInst2.render();
+      }catch(e){ console.warn('daily timeline chart:', e.message); }
+    }, 80);
+  });
 }
 
 function formatCompletionDate(date,time){try{return new Date(date+(time?' '+time:'')).toLocaleDateString(LANG==='ar'?'ar-SA':'en-US',{weekday:'long',day:'numeric',month:'long'})+(time?' '+time:'');}catch(e){return date;}}
