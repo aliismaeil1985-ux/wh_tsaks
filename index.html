@@ -8669,7 +8669,7 @@ sendEmail._sendingAt = Date.now();
 try{
 /* v20: أعد تهيئة EmailJS عند تغيّر Public Key المرسِل (تبديل المستخدم) */
 if(!window._emailjsInited || window._emailjsLastPub !== _senderPub){
-emailjs.init(_senderPub);
+emailjs.init({publicKey:_senderPub});
 window._emailjsInited = true;
 window._emailjsLastPub = _senderPub;
 }
@@ -9499,7 +9499,7 @@ if(!_tPub || !_tSvc || !_tTpl){notif('أدخل بيانات EmailJS الخاصة
 const to=CFG.testEmail||CU?.email;if(!to){notif('أدخل إيميل الاختبار','err');return;}
 try{
 if(!window._emailjsInited || window._emailjsLastPub !== _tPub){
-emailjs.init(_tPub);
+emailjs.init({publicKey:_tPub});
 window._emailjsInited = true;
 window._emailjsLastPub = _tPub;
 }
@@ -10814,7 +10814,7 @@ window._emailjsInited = false;
 window._emailjsLastPub = '';
 var _rPub = (CU && CU.emailPub && String(CU.emailPub).trim()) || (CFG && CFG.pubkey) || '';
 if(typeof emailjs !== 'undefined' && _rPub){
-emailjs.init(_rPub); window._emailjsInited = true; window._emailjsLastPub = _rPub;
+emailjs.init({publicKey:_rPub}); window._emailjsInited = true; window._emailjsLastPub = _rPub;
 notif('📧 تم إعادة تشغيل نظام الإيميل');
 } else {
 notif('📧 تم تحرير قفل الإرسال — أعد تحميل الصفحة إن لزم','info');
