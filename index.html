@@ -1556,7 +1556,7 @@ const USERS=[
 {id:5,name:'شاه جيهان',ename:'SJ',email:'mshajahan@tania.sa',role:'employee',phone:'966572487615',avatar:'SJ',department:'الإدارة',title:'مشرف'},
 ];
 /* تم حذف المهام والملاحظات التجريبية (الوهمية) — تبدأ القاعدة فارغة */
-let DB={users:[...USERS],tasks:[],notes:[]};
+let DB={users:[...USERS],tasks:[],notes:[],archive:[]};
 
 /* ====== تنظيف المهام/الملاحظات الوهمية من نسخ سابقة (يعمل مرة واحدة فقط) ====== */
 function _isDemoTask(t){
@@ -1587,9 +1587,25 @@ if(Array.isArray(p.notes)) DB.notes=p.notes
   .map(n=>({...n,files:Array.isArray(n.files)?n.files:[]}));
 if(p.users){const ex=p.users.filter(u=>!USERS.find(o=>o.id===u.id));if(ex.length)DB.users=[...USERS,...ex];}
 /* احفظ النسخة المنظفة فوراً حتى لا تعود الوهمية مع المزامنة */
-try{ localStorage.setItem('mDB', JSON.stringify({tasks:DB.tasks, notes:DB.notes, users:DB.users})); }catch(_e){}
+try{ localStorage.setItem('mDB', JSON.stringify({tasks:DB.tasks, notes:DB.notes, users:DB.users, archive:DB.archive||[]})); }catch(_e){}
+if(Array.isArray(p.archive)) DB.archive=p.archive;
 }
 }catch(e){console.warn('DB load:',e);}
+/* Migration: load legacy tania_archive from localStorage into DB.archive */
+try{
+  var _legacyArch=localStorage.getItem('tania_archive');
+  if(_legacyArch){
+    var _legacyArr=JSON.parse(_legacyArch);
+    if(Array.isArray(_legacyArr) && _legacyArr.length){
+      var _existIds=new Set(DB.archive.map(function(x){return String(x.id)+'|'+(Array.isArray(x.assignedTo)?x.assignedTo.join(','):x.assignedTo);}));
+      _legacyArr.forEach(function(x){
+        var _k=String(x.id)+'|'+(Array.isArray(x.assignedTo)?x.assignedTo.join(','):x.assignedTo);
+        if(!_existIds.has(_k)){ DB.archive.push(x); _existIds.add(_k); }
+      });
+      localStorage.removeItem('tania_archive');
+    }
+  }
+}catch(_e){ console.warn('[archive-migration]',_e); }
 DB.users=[...USERS,...DB.users.filter(u=>!USERS.find(o=>o.id===u.id))];
 window.addEventListener('storage', function(e){
 if(e.key === 'mDB' && e.newValue){
@@ -1598,6 +1614,7 @@ const p = JSON.parse(e.newValue);
 if(Array.isArray(p.tasks)) DB.tasks = p.tasks.filter(t=>!_isDemoTask(t)).map(t=>{const a=t.assignedTo;const assignedTo=Array.isArray(a)?a:(a?[Number(a)]:[1]);return {...t,serial:t.serial||null,assignedTo,progress:Number(t.progress)||0,attachments:Array.isArray(t.attachments)?t.attachments:[],perUserStatus:t.perUserStatus||{},perUserCompletion:t.perUserCompletion||{}};});
 if(Array.isArray(p.notes)) DB.notes = p.notes.filter(n=>!_isDemoNote(n)).map(n=>({...n,files:Array.isArray(n.files)?n.files:[]}));
 if(p.users){const ex=p.users.filter(u=>!USERS.find(o=>o.id===u.id));DB.users=[...USERS,...ex];}
+if(Array.isArray(p.archive)) DB.archive=p.archive;
 if(typeof CU !== 'undefined' && CU){
 if(CU.role==='manager'||CU.role==='admin'){
 if(typeof renderMgrTasks==='function') renderMgrTasks();
@@ -1949,7 +1966,7 @@ function _trimTombstones(arr){
 }
 function _saveLocal(){
   try{
-    localStorage.setItem('mDB', JSON.stringify({tasks:DB.tasks, notes:DB.notes, users:DB.users}));
+    localStorage.setItem('mDB', JSON.stringify({tasks:DB.tasks, notes:DB.notes, users:DB.users, archive:DB.archive||[]}));
     localStorage.setItem('mDEL', JSON.stringify(_DEL));
   }catch(e){
     console.warn('[saveLocal] error:', e && e.message || e);
@@ -1978,6 +1995,24 @@ setTimeout(function(){ try{ _captureSyncedSig(); }catch(_e){} }, 0);
 
 /* === تأمين 13.A/B: مزامنة Firestore مربوطة بحالة المصادقة === */
 let _authGatedSyncReady = false;
+function _migrateCFGToFirestore(){
+  /* One-time migration: push existing localStorage CFG to Firestore if Firestore doc is empty */
+  if(typeof fireReady==='undefined'||!fireReady||!db_fire) return;
+  var _localCFG=null;
+  try{var _c=localStorage.getItem('mCFG');if(_c)_localCFG=JSON.parse(_c);}catch(_e){}
+  if(!_localCFG||!Object.keys(_localCFG).some(function(k){return k!=='fromEmail'&&k!=='company'&&_localCFG[k];})) return;
+  db_fire.collection('tania_db').doc('config').get().then(function(snap){
+    /* Only push if Firestore doc is empty or missing key credentials */
+    var remote=snap.exists?(snap.data()||{}):{};
+    var hasRemote=remote.pubkey||remote.tgToken||remote.svc;
+    if(!hasRemote && (_localCFG.pubkey||_localCFG.tgToken||_localCFG.svc)){
+      var _toWrite=Object.assign({},_localCFG,{_updatedAt:new Date().toISOString(),_updatedBy:'migration'});
+      db_fire.collection('tania_db').doc('config').set(_toWrite)
+        .then(function(){console.log('[CFG] migrated from localStorage to Firestore');})
+        .catch(function(e){console.warn('[CFG migration]',e&&e.message||e);});
+    }
+  }).catch(function(e){console.warn('[CFG migration check]',e&&e.message||e);});
+}
 function _setupAuthGatedSync(){
   if(_authGatedSyncReady) return;
   if(typeof firebase==='undefined' || !firebase.auth){ setTimeout(_setupAuthGatedSync, 500); return; }
@@ -1985,6 +2020,7 @@ function _setupAuthGatedSync(){
   firebase.auth().onAuthStateChanged(function(user){
     if(user){
       try{ if(fireReady && db_fire && !syncListener) startSync(); }catch(_e){ console.warn('[auth-gated] startSync err:', _e); }
+      try{ setTimeout(_migrateCFGToFirestore, 2000); }catch(_e){}
     } else {
       try{ if(typeof stopSync === 'function') stopSync(); }catch(_e){}
     }
@@ -1993,6 +2029,7 @@ function _setupAuthGatedSync(){
 function stopSync(){
   try{ if(syncListener){ syncListener(); syncListener = null; } }catch(_e){}
   try{ if(typeof _outlookInboxListener !== 'undefined' && _outlookInboxListener){ _outlookInboxListener(); _outlookInboxListener = null; } }catch(_e){}
+  try{ if(typeof _cfgListener !== 'undefined' && _cfgListener){ _cfgListener(); _cfgListener = null; } }catch(_e){}
 }
 
 function startSync(){
@@ -2013,6 +2050,7 @@ function startSync(){
         const remoteTasks = (Array.isArray(data.tasks) ? data.tasks : []).filter(function(t){ return !_isDemoTask(t); }).map(_normalizeTask);
         const remoteNotes = (Array.isArray(data.notes) ? data.notes : []).filter(function(n){ return !_isDemoNote(n); }).map(_normalizeNote);
         const remoteUsers = Array.isArray(data.users) ? data.users : [];
+        const remoteArchive = Array.isArray(data.archive) ? data.archive : [];
         const remoteDelT = Array.isArray(data.del_tasks) ? data.del_tasks : [];
         const remoteDelN = Array.isArray(data.del_notes) ? data.del_notes : [];
         const remoteDelU = Array.isArray(data.del_users) ? data.del_users : [];
@@ -2033,6 +2071,13 @@ function startSync(){
         DB.tasks = _mergedTasks;
         DB.notes = _mergedNotes;
         DB.users = [].concat(USERS, _mergedExtraUsers);
+        (function(){
+          var _aMap={};
+          var _aKey=function(x){return String(x.id)+'|'+(Array.isArray(x.assignedTo)?x.assignedTo.join(','):x.assignedTo);};
+          remoteArchive.forEach(function(x){_aMap[_aKey(x)]=x;});
+          (DB.archive||[]).forEach(function(x){_aMap[_aKey(x)]=x;});
+          DB.archive=Object.values(_aMap).sort(function(a,b){return (b.archivedAt||'')>(a.archivedAt||'')?1:-1;});
+        })();
         _DEL.tasks = _trimTombstones(_mergeTombstones(_DEL.tasks, remoteDelT));
         _DEL.notes = _trimTombstones(_mergeTombstones(_DEL.notes, remoteDelN));
         _DEL.users = _trimTombstones(_mergeTombstones(_DEL.users, remoteDelU));
@@ -2353,6 +2398,7 @@ function saveDB(){
   const _snapDelT  = (_DEL.tasks||[]).slice();
   const _snapDelN  = (_DEL.notes||[]).slice();
   const _snapDelU  = (_DEL.users||[]).slice();
+  const _snapArchive = (DB.archive||[]).slice();
   let _txResult = null; /* populated on successful tx; applied in .then() */
   /* v47-SYNC-FIX: generate a unique token for this write so onSnapshot can identify our own echo */
   _myWriteToken = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -2366,6 +2412,7 @@ function saveDB(){
       tx.set(_docRef, {
         tasks: _snapTasks, notes: _snapNotes, users: _snapUsers,
         del_tasks: _snapDelT, del_notes: _snapDelN, del_users: _snapDelU,
+        archive: _snapArchive,
         updatedAt: new Date().toISOString(), updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown'),
         _wt: _myWriteToken
       });
@@ -2377,6 +2424,7 @@ function saveDB(){
     const srvDelT  = Array.isArray(server.del_tasks) ? server.del_tasks : [];
     const srvDelN  = Array.isArray(server.del_notes) ? server.del_notes : [];
     const srvDelU  = Array.isArray(server.del_users) ? server.del_users : [];
+    const srvArchive = Array.isArray(server.archive) ? server.archive : [];
 
     /* Always use the PRE-transaction snapshot so retries are idempotent. */
     const mergedTasks = _smartMerge(_snapTasks, srvTasks, _snapDelT, srvDelT);
@@ -2385,14 +2433,20 @@ function saveDB(){
     const mergedDelT  = _trimTombstones(_mergeTombstones(_snapDelT, srvDelT));
     const mergedDelN  = _trimTombstones(_mergeTombstones(_snapDelN, srvDelN));
     const mergedDelU  = _trimTombstones(_mergeTombstones(_snapDelU, srvDelU));
+    const _archMap = {};
+    const _archKey = function(x){ return String(x.id)+'|'+(Array.isArray(x.assignedTo)?x.assignedTo.join(','):x.assignedTo); };
+    srvArchive.forEach(function(x){ _archMap[_archKey(x)]=x; });
+    _snapArchive.forEach(function(x){ _archMap[_archKey(x)]=x; });
+    const mergedArchive = Object.values(_archMap).sort(function(a,b){ return (b.archivedAt||'')>(a.archivedAt||'')?1:-1; });
 
     /* Store result — DO NOT touch DB.* here (transaction body may retry). */
     _txResult = { tasks:mergedTasks, notes:mergedNotes, users:mergedUsers,
-                  delT:mergedDelT, delN:mergedDelN, delU:mergedDelU };
+                  delT:mergedDelT, delN:mergedDelN, delU:mergedDelU, archive:mergedArchive };
 
     tx.set(_docRef, {
       tasks: mergedTasks, notes: mergedNotes, users: mergedUsers,
       del_tasks: mergedDelT, del_notes: mergedDelN, del_users: mergedDelU,
+      archive: mergedArchive,
       updatedAt: new Date().toISOString(),
       updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown'),
       _wt: _myWriteToken
@@ -2404,6 +2458,7 @@ function saveDB(){
       DB.notes = _txResult.notes;
       const extra = (_txResult.users||[]).filter(function(u){ return !USERS.find(function(o){ return o.id===u.id; }); });
       DB.users = [].concat(USERS, extra);
+      DB.archive = _txResult.archive||[];
       _DEL.tasks = _txResult.delT; _DEL.notes = _txResult.delN; _DEL.users = _txResult.delU;
       _saveLocal();
       try{ if(typeof refreshCurrentView==='function') refreshCurrentView(); }catch(_e){}
@@ -2416,6 +2471,7 @@ function saveDB(){
     _docRef.set({
       tasks: _snapTasks, notes: _snapNotes, users: _snapUsers,
       del_tasks: _snapDelT, del_notes: _snapDelN, del_users: _snapDelU,
+      archive: _snapArchive,
       updatedAt: new Date().toISOString(),
       updatedBy: (typeof CU!=='undefined'&&CU?CU.name:'unknown'),
       _wt: _myWriteToken
@@ -2447,8 +2503,46 @@ let PW={};
 try{const p=localStorage.getItem('mPW');if(p)PW=JSON.parse(p);}catch(e){}
 let THEME={mode:'light',a1:'#3b82f6',a2:'#2563eb'};
 try{const t=localStorage.getItem('mTH');if(t)THEME=JSON.parse(t);}catch(e){}
-function saveCFGStore(){try{localStorage.setItem('mCFG',JSON.stringify(CFG));}catch(e){}}
+function saveCFGStore(){
+  try{localStorage.setItem('mCFG',JSON.stringify(CFG));}catch(e){}
+  try{
+    if(typeof fireReady!=='undefined' && fireReady && db_fire){
+      var _cfgSafe=Object.assign({},CFG,{_updatedAt:new Date().toISOString(),_updatedBy:(typeof CU!=='undefined'&&CU?CU.name:'system')});
+      db_fire.collection('tania_db').doc('config').set(_cfgSafe)
+        .catch(function(e){console.warn('[saveCFGStore] Firestore:',e&&e.message||e);});
+    }
+  }catch(e){console.warn('[saveCFGStore]',e&&e.message||e);}
+}
 function savePW(){try{localStorage.setItem('mPW',JSON.stringify(PW));}catch(e){}}
+function _loadCFGFromFirestore(){
+  if(typeof fireReady==='undefined'||!fireReady||!db_fire) return;
+  db_fire.collection('tania_db').doc('config').get().then(function(snap){
+    if(!snap.exists) return;
+    var remote=snap.data()||{};
+    var _m=Object.assign({},CFG,remote);
+    delete _m._updatedAt; delete _m._updatedBy;
+    if(JSON.stringify(_m)!==JSON.stringify(CFG)){
+      CFG=_m;
+      try{localStorage.setItem('mCFG',JSON.stringify(CFG));}catch(_e){}
+      console.log('[CFG] synced from Firestore');
+    }
+  }).catch(function(e){console.warn('[loadCFG]',e&&e.message||e);});
+}
+var _cfgListener=null;
+function _startCFGSync(){
+  if(!fireReady||!db_fire||_cfgListener) return;
+  _cfgListener=db_fire.collection('tania_db').doc('config').onSnapshot(function(snap){
+    if(!snap.exists) return;
+    var remote=snap.data()||{};
+    var _m=Object.assign({},CFG,remote);
+    delete _m._updatedAt; delete _m._updatedBy;
+    if(JSON.stringify(_m)!==JSON.stringify(CFG)){
+      CFG=_m;
+      try{localStorage.setItem('mCFG',JSON.stringify(CFG));}catch(_e){}
+      console.log('[CFG] realtime update');
+    }
+  },function(e){console.warn('[CFGSync]',e&&e.message||e);});
+}
 function saveTHEME(){try{localStorage.setItem('mTH',JSON.stringify(THEME));}catch(e){}}
 let LANG = localStorage.getItem('mLang')||'ar';
 const T = {
@@ -5316,6 +5410,8 @@ if(!confirm('سيتم مسح جميع البيانات. هل أنت متأكد؟
 sessionStorage.removeItem('cu');location.reload();
 }
 function initMgr(){
+try{_loadCFGFromFirestore();}catch(_e){}
+try{_startCFGSync();}catch(_e){}
 setTimeout(sbInit, 100);
 showPage('pg-mgr');
 $('mgr-name').textContent=CU.name;
@@ -6337,6 +6433,8 @@ notif('✅ أُضيف الموظف محلياً — أنشئه أيضاً في F
 ['ne-name','ne-email','ne-phone','ne-dept','ne-title','ne-pass','ne-em-pub','ne-em-svc','ne-em-tpl'].forEach(id=>{const el=$(id);if(el)el.value='';});
 }
 function initEmp(){
+try{_loadCFGFromFirestore();}catch(_e){}
+try{_startCFGSync();}catch(_e){}
 setTimeout(sbInit, 100);
 showPage('pg-emp');
 /* v61-FIX: force notification refresh for employee */
@@ -6363,6 +6461,8 @@ if(t) empTab('dashboard',t); else{renderEmpStats();renderEmpDashboard();}
 },0);
 }
 function initAdmin(){
+try{_loadCFGFromFirestore();}catch(_e){}
+try{_startCFGSync();}catch(_e){}
 setTimeout(sbInit, 100);
 showPage('pg-admin');
 document.body.classList.remove('role-employee','role-manager');
@@ -6856,11 +6956,18 @@ const done=tasks.filter(t=>t.status==='completed').length;
 const inp=tasks.filter(t=>t.status==='in_progress').length;
 const pend=tasks.filter(t=>t.status==='pending').length;
 const ov=tasks.filter(t=>t.deadline&&t.deadline<today()&&t.status!=='completed'&&t.status!=='cancelled'&&t.status!=='postponed').length;
-// v43: نسبة الإنجاز = مهام اليوم المنجزة / مهام اليوم
+// درجة إنجاز اليوم = متوسط التقدم الفعلي (مكتملة=100، جزئية=تقدمها، غير مبدوءة=0)
 const _avgTd=today();
-const _dueToday=tasks.filter(t=>t.deadline===_avgTd).length;
-const _doneToday=tasks.filter(t=>t.deadline===_avgTd&&t.status==='completed').length;
-const avg=_dueToday?Math.round((_doneToday/_dueToday)*100):(tasks.length?Math.round((done/tasks.length)*100):0);
+const _archToday=(DB.archive||[]).filter(function(a){var ids=Array.isArray(a.assignedTo)?a.assignedTo:[a.assignedTo];return a.deadline===_avgTd&&ids.includes(CU.id);});
+const _liveDueToday=tasks.filter(t=>t.deadline===_avgTd);
+const _allDueToday=_liveDueToday.concat(_archToday.map(function(a){return Object.assign({},a,{status:'completed',_effectiveProgress:100});}));
+const _dueToday=_allDueToday.length;
+const _todayScore=_allDueToday.reduce(function(sum,t){
+  if(t.status==='completed') return sum+100;
+  var p=typeof getEffectiveProgress==='function'?getEffectiveProgress(t,CU.id):Math.min(100,Math.max(0,Number(t._effectiveProgress||t.progress)||0));
+  return sum+p;
+},0);
+const avg=_dueToday?Math.round(_todayScore/_dueToday):(tasks.length?Math.round(tasks.reduce(function(s,t){return s+(t.status==='completed'?100:(t._effectiveProgress||0));},0)/tasks.length):0);
 const post=tasks.filter(t=>t.status==='postponed').length;
 const cards=[
 {l:t('myTasks'),v:tasks.length,c:'#3b82f6',i:'📋',f:'all'},
@@ -7114,32 +7221,49 @@ renderDailyRate('emp');
 }
 /* v43: unified daily completion rate screen for manager + employee */
 function _getDailyRateData(uid, days){
-/* Returns array of {date, due, done, diff, missed} for last `days` days */
+/* Returns {date,due,done,inProgress,diff,score,pct,missed,partial} — progress-aware */
 var rows=[];
-var td=today();
 for(var d=days-1;d>=0;d--){
   var dt=new Date(); dt.setDate(dt.getDate()-d);
   var ds=dt.toISOString().split('T')[0];
   var allT = uid ? getMyTasks(uid) : (DB&&DB.tasks?DB.tasks:[]);
-  // expand per-user for manager view
+  /* Archived tasks for this user */
+  var archT=(DB.archive||[]).filter(function(t){
+    if(uid){var ids=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];return ids.includes(uid);}
+    return true;
+  });
+  /* Expand live tasks per-user with dedup */
   var expanded=[];
+  var seen={};
   allT.forEach(function(t){
     var assigned=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];
     assigned.forEach(function(u){
+      var k=String(t.id)+'|'+String(u); if(seen[k]) return; seen[k]=true;
       var us=getTaskStatusForUser(t,u);
-      expanded.push(Object.assign({},t,{status:us,_displayUser:u}));
+      var ep=typeof getEffectiveProgress==='function'?getEffectiveProgress(t,u):(us==='completed'?100:Math.min(100,Math.max(0,Number(t.progress)||0)));
+      expanded.push(Object.assign({},t,{status:us,_displayUser:u,_ep:ep}));
     });
   });
-  var dueTasks = expanded.filter(function(t){ return t.deadline===ds; });
-  var doneTasks = dueTasks.filter(function(t){ return t.status==='completed'; });
-  var missedTasks = dueTasks.filter(function(t){ return t.status!=='completed'&&t.status!=='cancelled'; });
+  /* Archived = fully completed (score 100) */
+  archT.forEach(function(t){
+    var assigned=Array.isArray(t.assignedTo)?t.assignedTo:[t.assignedTo];
+    assigned.forEach(function(u){
+      var k=String(t.id)+'|'+String(u); if(seen[k]) return; seen[k]=true;
+      expanded.push(Object.assign({},t,{status:'completed',_displayUser:u,_ep:100}));
+    });
+  });
+  var dueTasks=expanded.filter(function(t){return t.deadline===ds;});
+  var doneTasks=dueTasks.filter(function(t){return t.status==='completed';});
+  var partialTasks=dueTasks.filter(function(t){return t.status!=='completed'&&t.status!=='cancelled'&&(t._ep||0)>0;});
+  var missedTasks=dueTasks.filter(function(t){return t.status!=='completed'&&t.status!=='cancelled'&&(t._ep||0)===0;});
+  var totalScore=dueTasks.reduce(function(s,t){return s+(t._ep||0);},0);
+  var pct=dueTasks.length?Math.round(totalScore/dueTasks.length):null;
   rows.push({
-    date:ds,
-    due:dueTasks.length,
-    done:doneTasks.length,
-    diff:dueTasks.length-doneTasks.length,
-    pct:dueTasks.length?Math.round(doneTasks.length/dueTasks.length*100):null,
-    missed:missedTasks.map(function(t){return t.title||'—';})
+    date:ds, due:dueTasks.length, done:doneTasks.length,
+    inProgress:partialTasks.length, diff:dueTasks.length-doneTasks.length,
+    score:totalScore, pct:pct,
+    missed:missedTasks.map(function(t){return t.title||'—';}),
+    partial:partialTasks.map(function(t){return {title:t.title||'—',pct:t._ep||0};})
   });
 }
 return rows;
@@ -7196,14 +7320,16 @@ var chartWrap='<div style="background:'+cardBg+';border:1px solid var(--border);
 var tableRows=rows.filter(function(r){return r.due>0;}).reverse().map(function(r){
   var pct=r.pct!=null?r.pct:'-';
   var pctClr=r.pct!=null?(r.pct>=80?'#10b981':r.pct>=50?'#f59e0b':'#ef4444'):'#94a3b8';
-  var missedStr=r.missed.length>0?r.missed.slice(0,3).map(function(m){return '<span style="background:rgba(239,68,68,.1);color:#ef4444;padding:1px 6px;border-radius:5px;font-size:10px;white-space:nowrap">'+escHtml(m)+'</span>';}).join(' ')+'<br>'+'<span style="font-size:10px;color:'+subColor+'">'+r.missed.length+' مهمة متأخرة</span>':'<span style="color:#10b981;font-size:12px">✅ كل المهام</span>';
+  var partialStr=(r.partial||[]).length>0?'<div style="margin-top:3px">'+r.partial.slice(0,3).map(function(p){return '<span style="background:rgba(249,115,22,.1);color:#f97316;padding:1px 6px;border-radius:5px;font-size:10px;white-space:nowrap">'+escHtml(p.title)+' ('+p.pct+'%)</span>';}).join(' ')+'</div>':'';
+  var missedStr=r.missed.length>0?r.missed.slice(0,3).map(function(m){return '<span style="background:rgba(239,68,68,.1);color:#ef4444;padding:1px 6px;border-radius:5px;font-size:10px;white-space:nowrap">'+escHtml(m)+'</span>';}).join(' ')+(r.missed.length>3?'<span style="font-size:10px;color:'+subColor+'"> +'+(r.missed.length-3)+'</span>':''):r.inProgress>0?'<span style="color:#f97316;font-size:11px">🔄 قيد الإنجاز</span>':'<span style="color:#10b981;font-size:12px">✅ كل المهام</span>';
   return '<tr style="border-bottom:1px solid var(--border)">'
     +'<td style="padding:9px 10px;font-size:12px;font-weight:700;color:'+txtColor+';white-space:nowrap">'+r.date+'</td>'
     +'<td style="padding:9px 10px;text-align:center;font-size:13px;font-weight:900;color:#3b82f6">'+r.due+'</td>'
     +'<td style="padding:9px 10px;text-align:center;font-size:13px;font-weight:900;color:#10b981">'+r.done+'</td>'
+    +'<td style="padding:9px 10px;text-align:center;font-size:13px;font-weight:900;color:#f97316">'+(r.inProgress||0)+'</td>'
     +'<td style="padding:9px 10px;text-align:center;font-size:13px;font-weight:900;color:#ef4444">'+r.diff+'</td>'
-    +'<td style="padding:9px 10px;text-align:center"><span style="font-size:13px;font-weight:900;color:'+pctClr+'">'+pct+(r.pct!=null?'%':'')+'</span></td>'
-    +'<td style="padding:9px 10px;font-size:11px;color:'+subColor+'">'+missedStr+'</td>'
+    +'<td style="padding:9px 10px;text-align:center"><span style="font-size:14px;font-weight:900;color:'+pctClr+'">'+pct+(r.pct!=null?'%':'')+'</span></td>'
+    +'<td style="padding:9px 10px;font-size:11px;color:'+subColor+'">'+missedStr+partialStr+'</td>'
     +'</tr>';
 }).join('');
 var tableHtml='<div style="background:'+cardBg+';border:1px solid var(--border);border-radius:14px;overflow:hidden">'
@@ -7213,12 +7339,13 @@ var tableHtml='<div style="background:'+cardBg+';border:1px solid var(--border);
   +'<thead><tr style="background:var(--stat)">'
   +'<th style="padding:9px 10px;text-align:right;font-size:11px;font-weight:800;color:'+subColor+';white-space:nowrap">التاريخ</th>'
   +'<th style="padding:9px 10px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">المهام</th>'
-  +'<th style="padding:9px 10px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">المنجزة</th>'
+  +'<th style="padding:9px 10px;text-align:center;font-size:11px;font-weight:800;color:#10b981">مكتملة</th>'
+  +'<th style="padding:9px 10px;text-align:center;font-size:11px;font-weight:800;color:#f97316">قيد الإنجاز</th>'
   +'<th style="padding:9px 10px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">الفرق</th>'
-  +'<th style="padding:9px 10px;text-align:center;font-size:11px;font-weight:800;color:'+subColor+'">النسبة</th>'
-  +'<th style="padding:9px 10px;text-align:right;font-size:11px;font-weight:800;color:'+subColor+'">السبب / المهام غير المنجزة</th>'
+  +'<th style="padding:9px 10px;text-align:center;font-size:11px;font-weight:800;color:#8b5cf6">درجة الإنجاز</th>'
+  +'<th style="padding:9px 10px;text-align:right;font-size:11px;font-weight:800;color:'+subColor+'">التفاصيل</th>'
   +'</tr></thead>'
-  +'<tbody>'+(tableRows||'<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--tx3)">لا توجد مهام في هذه الفترة</td></tr>')+'</tbody>'
+  +'<tbody>'+(tableRows||'<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--tx3)">لا توجد مهام في هذه الفترة</td></tr>')+'</tbody>'
   +'</table></div></div>';
 /* Empty state */
 if(!tableRows){
@@ -7234,17 +7361,29 @@ try{
   var cats=chartRows.map(function(r){return r.date;});
   var dueArr=chartRows.map(function(r){return r.due;});
   var doneArr=chartRows.map(function(r){return r.done;});
-  var pctArr=chartRows.map(function(r){return r.pct!=null?r.pct:0;});
+  var partArr=chartRows.map(function(r){return r.inProgress||0;});
+  var scoreArr=chartRows.map(function(r){return r.pct!=null?r.pct:0;});
   var opts={
-    chart:{type:'bar',height:220,background:'transparent',fontFamily:"'Cairo','Tajawal',sans-serif",toolbar:{show:false},animations:{enabled:true,speed:600}},
-    plotOptions:{bar:{borderRadius:4,columnWidth:'60%',dataLabels:{position:'top'}}},
+    chart:{type:'bar',height:240,background:'transparent',fontFamily:"'Cairo','Tajawal',sans-serif",toolbar:{show:false},animations:{enabled:true,speed:600}},
+    plotOptions:{bar:{borderRadius:4,columnWidth:'55%',dataLabels:{position:'top'}}},
     dataLabels:{enabled:false},
-    series:[{name:'مهام اليوم',data:dueArr,type:'bar'},{name:'المنجزة',data:doneArr,type:'bar'},{name:'نسبة الإنجاز%',data:pctArr,type:'line'}],
-    colors:['#3b82f6','#10b981','#f59e0b'],
+    series:[
+      {name:'المهام الكلية',data:dueArr,type:'bar'},
+      {name:'مكتملة',data:doneArr,type:'bar'},
+      {name:'قيد الإنجاز',data:partArr,type:'bar'},
+      {name:'درجة الإنجاز%',data:scoreArr,type:'line'}
+    ],
+    colors:['#3b82f6','#10b981','#f97316','#8b5cf6'],
+    stroke:{width:[0,0,0,2.5],curve:'smooth'},
+    markers:{size:[0,0,0,4]},
     xaxis:{categories:cats,labels:{style:{fontSize:'10px',fontFamily:"'Cairo',sans-serif",colors:Array(cats.length).fill(subColor)},rotate:-30},axisBorder:{show:false}},
-    yaxis:[{min:0,labels:{style:{fontSize:'10px',colors:[subColor]}}},{opposite:true,min:0,max:100,labels:{style:{fontSize:'10px',colors:['#f59e0b']},formatter:function(v){return v+'%';}}}],
+    yaxis:[
+      {min:0,seriesName:'المهام الكلية',labels:{style:{fontSize:'10px',colors:[subColor]}}},
+      {opposite:true,min:0,max:100,seriesName:'درجة الإنجاز%',labels:{style:{fontSize:'10px',colors:['#8b5cf6']},formatter:function(v){return v+'%';}}}
+    ],
     legend:{show:true,position:'top',fontFamily:"'Cairo',sans-serif",fontSize:'11px',labels:{colors:[txtColor]}},
     grid:{borderColor:isDark?'rgba(148,163,184,.15)':'rgba(0,0,0,.06)'},
+    tooltip:{y:{formatter:function(v,o){return o.seriesIndex===3?v+'%':v+' مهام';}}},
     theme:{mode:isDark?'dark':'light'}
   };
   container._apexInst=new ApexCharts(chartEl,opts);
@@ -8843,8 +8982,8 @@ container.innerHTML = html;
 }
 window._slideList=[];
 window._slideIdx=0;
-function getArchive(){return JSON.parse(localStorage.getItem('tania_archive')||'[]');}
-function saveArchive(arr){localStorage.setItem('tania_archive',JSON.stringify(arr));}
+function getArchive(){return DB.archive||[];}
+function saveArchive(arr){DB.archive=arr||[];if(typeof saveDB==='function') saveDB();}
 function archiveTask(taskId, manual, userId){
 const t = DB.tasks.find(x => x.id === taskId);
 if(!t){ notif('المهمة غير موجودة','err'); return; }
