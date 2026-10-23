@@ -14047,4 +14047,1254 @@ _wireFilterStickyTop();
   #chart-filter-controls {
     disp
 </style>
-<script src="wh-workspace.js?v=1" defer></script>
+<script id="wh-workspace">
+/*!
+ * WH Workspace — طبقة مساحة المهام (To Do + Outlook) لمنصة مهام المستودعات
+ * تعمل فوق النظام الحالي: تقرأ وتكتب في DB.tasks نفسها وتستخدم saveDB() للمزامنة مع Firebase،
+ * ولا تغيّر مخطط قاعدة البيانات (الحقول الجديدة اختيارية داخل كائن المهمة).
+ * الإيقاف الطارئ: افتح الموقع بإضافة ?classic=1 للرابط، أو من الإعدادات.
+ */
+/* ═══ إعداد Outlook المركزي (اختياري): ضع هنا Client ID مرة واحدة ليعمل لكل المستخدمين دون إدخاله في كل متصفح ═══ */
+var WH_DEFAULT_MS = { clientId: '', tenant: 'common' };
+
+(function(){
+'use strict';
+if(window.TW && window.TW.__loaded) return;
+var TW = window.TW = {__loaded:true, version:'1.0.0'};
+try{ if(/[?&]classic=1/.test(location.search)){ TW.disabled=true; } }catch(e){}
+
+/* ───────────── أدوات عامة ───────────── */
+function $id(i){ return document.getElementById(i); }
+function lang(){ try{ return (typeof LANG!=='undefined' && LANG==='en')?'en':'ar'; }catch(e){ return 'ar'; } }
+function L(ar,en){ return lang()==='en' ? en : ar; }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function pad(n){ return (n<10?'0':'')+n; }
+function ymd(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function todayStr(){ return ymd(new Date()); }
+function hhmm(){ var n=new Date(); return pad(n.getHours())+':'+pad(n.getMinutes()); }
+function parseYmd(s){ var p=String(s||'').slice(0,10).split('-'); return new Date(+p[0],(+p[1]||1)-1,+p[2]||1); }
+function addDays(s,n){ var d=parseYmd(s); d.setDate(d.getDate()+n); return ymd(d); }
+function diffDays(a,b){ return Math.round((parseYmd(a)-parseYmd(b))/86400000); }
+function loc(){ return lang()==='en' ? 'en-GB' : 'ar-SA-u-ca-gregory-nu-latn'; }
+function fmtDate(s,withYear){
+  if(!s) return '';
+  var d=parseYmd(s), t0=todayStr(), df=diffDays(s,t0);
+  if(df===0) return L('اليوم','Today');
+  if(df===1) return L('غدًا','Tomorrow');
+  if(df===-1) return L('أمس','Yesterday');
+  var o={day:'numeric',month:'short'}; if(withYear||d.getFullYear()!==new Date().getFullYear()) o.year='numeric';
+  if(df>1&&df<7) o={weekday:'long'};
+  try{ return new Intl.DateTimeFormat(loc(),o).format(d); }catch(e){ return s; }
+}
+function fmtLong(s){ try{ return new Intl.DateTimeFormat(loc(),{weekday:'long',day:'numeric',month:'long'}).format(parseYmd(s)); }catch(e){ return s; } }
+function fmtMonth(d){ try{ return new Intl.DateTimeFormat(loc(),{month:'long',year:'numeric'}).format(d); }catch(e){ return ymd(d); } }
+function fmtTime(iso){ try{ return new Intl.DateTimeFormat(loc(),{hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso)); }catch(e){ return ''; } }
+function debounce(fn,ms){ var t; return function(){ var a=arguments,c=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(c,a); },ms); }; }
+function lsGet(k,d){ try{ var v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function toast(msg,type){ try{ if(typeof notif==='function') notif(msg,type||'ok'); }catch(e){} }
+
+/* أيقونات موحّدة (خطية، 24px) */
+var ICO = {
+  dashboard:'<rect x="3" y="3" width="7" height="9" rx="1.6"/><rect x="14" y="3" width="7" height="5" rx="1.6"/><rect x="14" y="12" width="7" height="9" rx="1.6"/><rect x="3" y="16" width="7" height="5" rx="1.6"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  tasks:'<path d="M9 6h12M9 12h12M9 18h12"/><path d="M3.5 6l1.3 1.3L7 4.8M3.5 12l1.3 1.3L7 10.8M3.5 18l1.3 1.3L7 16.8"/>',
+  star:'<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9L3.5 9.7l5.9-.8z"/>',
+  planned:'<rect x="3.5" y="5" width="17" height="15" rx="2.2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8.5 14.5h3"/>',
+  alert:'<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2.2"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+  mailtask:'<path d="M20.5 12.5V7a2 2 0 0 0-2-2h-13a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8"/><path d="M4 7.5l8 5.5 8-5.5"/><path d="M16.5 18l1.8 1.8 3.4-3.6"/>',
+  calendar:'<rect x="3.5" y="5" width="17" height="15" rx="2.2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  list:'<path d="M4 6h2M4 12h2M4 18h2M9 6h11M9 12h11M9 18h11"/>',
+  folder:'<path d="M3.5 7.5a2 2 0 0 1 2-2H9l2 2.2h7.5a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  brief:'<rect x="3.5" y="7" width="17" height="12" rx="2"/><path d="M9 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5V7M3.5 12.5h17"/>',
+  check:'<circle cx="12" cy="12" r="9"/><path d="M8 12.2l2.9 2.9L16.3 9.5"/>',
+  settings:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  chev:'<path d="M6 9l6 6 6-6"/>',
+  search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  bell:'<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21h4"/>',
+  trash:'<path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7M10 11v5M14 11v5"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
+  user:'<circle cx="12" cy="8.5" r="3.7"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  users:'<circle cx="9" cy="8.5" r="3.3"/><path d="M2.8 19.5a6.2 6.2 0 0 1 12.4 0"/><path d="M16 5.4a3.3 3.3 0 0 1 0 6.2M18 14.2a6.2 6.2 0 0 1 3.2 5.3"/>',
+  refresh:'<path d="M20 11a8 8 0 0 0-14.3-4.5L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.5l1.7-2M20 20v-4.5h-4.5"/>',
+  moon:'<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.7 2.7 3.8 5.7 3.8 9S14.7 18.3 12 21c-2.7-2.7-3.8-5.7-3.8-9S9.3 5.7 12 3z"/>',
+  logout:'<path d="M14 4.5H6.5a1.5 1.5 0 0 0-1.5 1.5v12a1.5 1.5 0 0 0 1.5 1.5H14M10 12h10M17 8.5l3.5 3.5-3.5 3.5"/>',
+  hourglass:'<path d="M7 3.5h10M7 20.5h10M8 3.5c0 4 3.5 5 4 8.5-.5 3.5-4 4.5-4 8.5M16 3.5c0 4-3.5 5-4 8.5.5 3.5 4 4.5 4 8.5"/>',
+  note:'<path d="M6 3.5h9l4 4v13H6z"/><path d="M14.5 3.5v4.5H19M9 13h7M9 17h5"/>',
+  clip:'<path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7L9.8 16.6a1.7 1.7 0 0 1-2.4-2.4l7.2-7.2"/>',
+  repeat:'<path d="M17 3l3 3-3 3M4 11V9a3 3 0 0 1 3-3h13M7 21l-3-3 3-3M20 13v2a3 3 0 0 1-3 3H4"/>',
+  panel:'<rect x="3.5" y="4.5" width="17" height="15" rx="2.2"/><path d="M14.5 4.5v15"/>',
+  ext:'<path d="M14 4.5h5.5V10M19.5 4.5L11 13M17.5 14v4a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18V8A1.5 1.5 0 0 1 6 6.5h4"/>',
+  edit:'<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  inbox:'<path d="M3.5 13l2.7-7.2A1.5 1.5 0 0 1 7.6 5h8.8a1.5 1.5 0 0 1 1.4.8L20.5 13v4.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M3.5 13H8l1 2.5h6l1-2.5h4.5"/>',
+  download:'<path d="M12 4v11M7.5 11L12 15.5 16.5 11M5 19.5h14"/>',
+  filter:'<path d="M4 5h16l-6 7.5V19l-4 2v-8.5z"/>',
+  key:'<circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L20 3M16 7l3 3"/>'
+};
+function ic(n,sz,cls){ return '<svg class="tw-ic'+(cls?' '+cls:'')+'" width="'+(sz||20)+'" height="'+(sz||20)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(ICO[n]||'')+'</svg>'; }
+
+var PRI = {urgent:{ar:'عاجل',en:'Urgent',c:'#dc2626',r:0}, high:{ar:'عالية',en:'High',c:'#ea580c',r:1}, medium:{ar:'متوسطة',en:'Medium',c:'#ca8a04',r:2}, low:{ar:'منخفضة',en:'Low',c:'#16a34a',r:3}};
+var STA = {pending:{ar:'قيد الانتظار',en:'Pending'}, in_progress:{ar:'جارية',en:'In progress'}, completed:{ar:'مكتملة',en:'Completed'}, postponed:{ar:'مؤجلة',en:'Postponed'}, cancelled:{ar:'ملغاة',en:'Cancelled'}};
+function priLbl(p){ return PRI[p] ? L(PRI[p].ar,PRI[p].en) : (p||''); }
+function staLbl(s){ return STA[s] ? L(STA[s].ar,STA[s].en) : (s||''); }
+var AV_COL = ['#2563eb','#7c3aed','#0891b2','#059669','#d97706','#db2777','#4f46e5','#0d9488'];
+function avCol(id){ var n=0,s=String(id); for(var i=0;i<s.length;i++) n+=s.charCodeAt(i); return AV_COL[n%AV_COL.length]; }
+function userCode(u){ try{ if(typeof getUserCode==='function') return getUserCode(u); }catch(e){} return (u&&(u.ename||u.name||'?')).toString().slice(0,2).toUpperCase(); }
+
+/* ───────────── الحالة ───────────── */
+var S = Object.assign({
+  view:'dashboard', sel:null, q:'', sort:'smart', group:'none', fPri:'', fSta:'', fDept:'', fEmp:'',
+  scope:'', period:30, sbCol:false, calMonth:null, calDay:null, mailFilter:'all', landing:true
+}, lsGet('tw_ui',{}) || {});
+S.sel=null; S.q='';
+function saveUi(){ lsSet('tw_ui',{sort:S.sort,group:S.group,sbCol:S.sbCol,period:S.period,mailFilter:S.mailFilter,landing:S.landing,scope:S.scope}); }
+var saveState = {st:'saved', at:0};
+var openSections = lsGet('tw_open',{lists:true,projects:false,classic:false});
+
+/* ───────────── طبقة البيانات (قراءة/كتابة DB.tasks) ───────────── */
+function me(){ try{ return CU; }catch(e){ return null; } }
+function isMgr(){ var u=me(); return !!(u && (u.role==='manager'||u.role==='admin')); }
+function arr(x){ return Array.isArray(x)?x:(x==null||x===''?[]:[x]); }
+function asg(t){ return arr(t.assignedTo); }
+function mine(t){ var u=me(); return !!u && asg(t).indexOf(u.id)>-1; }
+function getTask(id){ try{ return DB.tasks.find(function(t){ return String(t.id)===String(id); }); }catch(e){ return null; } }
+function aggregate(t){ try{ if(typeof _aggregateTaskStatus==='function') return _aggregateTaskStatus(t); }catch(e){} return t.status||'pending'; }
+function eff(t){
+  var u=me();
+  if(u && mine(t)){ var p=t.perUserStatus; if(p && p[u.id]!==undefined) return p[u.id]; }
+  return t.status||'pending';
+}
+function isOpen(t){ var s=eff(t); return s==='pending'||s==='in_progress'||s==='postponed'; }
+function isDone(t){ return eff(t)==='completed'; }
+function dl(t){ return t.deadline||t.due||''; }
+function isOverdue(t){ var d=dl(t); return isOpen(t) && !!d && d<todayStr(); }
+function isToday(t){ return isOpen(t) && dl(t)===todayStr(); }
+function starState(t){ var u=me(); var v=t.starBy&&t.starBy[u.id]; return v; }
+function isImportant(t){ var v=starState(t); if(v===true) return true; if(v===false) return false; return t.priority==='urgent'||t.priority==='high'; }
+function inMyDay(t){ var u=me(); return !!(t.myDayBy && t.myDayBy[u.id]===todayStr()); }
+function listOf(t){ var u=me(); return (t.listBy && t.listBy[u.id])||''; }
+function waitType(t){ return t.waiting && t.waiting.type ? t.waiting.type : ''; }
+function remindAt(t){ var u=me(); return (t.reminderBy && t.reminderBy[u.id])||''; }
+function stepsOf(t){ return Array.isArray(t.steps)?t.steps:[]; }
+function userName(id){ try{ var u=getUser(id); return u?u.name:''; }catch(e){ return ''; } }
+function canCore(t){ var u=me(); return isMgr() || (u && t.createdBy===u.id); }
+function canDelete(t){ return canCore(t); }
+function templ(t){ try{ return typeof isRecurringTemplate==='function' && isRecurringTemplate(t); }catch(e){ return false; } }
+
+var _vis=null;
+function visible(){
+  if(_vis) return _vis;
+  var u=me(), all=[];
+  try{ all=(DB.tasks||[]).filter(function(t){ return t && !templ(t); }); }catch(e){}
+  var out;
+  if(!u) out=[];
+  else if(isMgr()){
+    if(scopeNow()==='mine') out=all.filter(function(t){ return mine(t)||t.createdBy===u.id; });
+    else out=all;
+  } else out=all.filter(mine);
+  try{ if(typeof dedupTaskSeries==='function') out=dedupTaskSeries(out); }catch(e){}
+  return (_vis=out);
+}
+function scopeNow(){ if(!isMgr()) return 'mine'; return S.scope||'all'; }
+function invalidate(){ _vis=null; }
+
+function departments(){
+  var out=[]; try{ var sel=$id('t-dept'); if(sel){ Array.prototype.forEach.call(sel.options,function(o){ if(o.value) out.push(o.value); }); } }catch(e){}
+  if(!out.length) out=['إدارة المستودعات','إدارة المشتريات','إدارة الإنتاج','إدارة الصيانة','إدارة الخدمات الإدارية','إدارة النقل والحركة','إدارة الموارد البشرية','الإدارة العليا','تقنية المعلومات','الجودة'];
+  try{ (DB.tasks||[]).forEach(function(t){ if(t.department && out.indexOf(t.department)<0) out.push(t.department); }); }catch(e){}
+  return out;
+}
+function assignable(){ try{ return (DB.users||[]).filter(function(u){ return u.role==='employee'||u.role==='manager'; }); }catch(e){ return []; } }
+
+/* القوائم الشخصية */
+function listsKey(){ return 'tw_lists_'+(me()?me().id:'x'); }
+function listNames(){
+  var set={}, out=[]; (lsGet(listsKey(),[])||[]).forEach(function(n){ if(n&&!set[n]){ set[n]=1; out.push(n); } });
+  try{ var u=me(); (DB.tasks||[]).forEach(function(t){ var n=t.listBy&&t.listBy[u.id]; if(n&&!set[n]){ set[n]=1; out.push(n); } }); }catch(e){}
+  return out;
+}
+function addList(n){ n=String(n||'').trim().slice(0,40); if(!n) return ''; var a=lsGet(listsKey(),[])||[]; if(a.indexOf(n)<0){ a.push(n); lsSet(listsKey(),a); } return n; }
+
+/* ───────────── الحفظ والمزامنة ───────────── */
+var _flush=debounce(function(){
+  try{ saveDB(); saveState={st:'saved',at:Date.now()}; }catch(e){ console.error('[TW] save',e); saveState={st:'error',at:Date.now()}; }
+  syncBadge();
+},450);
+function commit(){ saveState.st='saving'; syncBadge(); _flush(); }
+function syncBadge(){
+  var el=$id('tw-sync'); if(!el) return;
+  var online = navigator.onLine!==false, fire=false; try{ fire=!!(fireReady && db_fire); }catch(e){}
+  var st=saveState.st, txt, cls;
+  if(st==='saving'){ txt=L('جارٍ الحفظ…','Saving…'); cls='sv'; }
+  else if(st==='error'){ txt=L('تعذّر الحفظ','Save failed'); cls='er'; }
+  else if(!online){ txt=L('غير متصل — محفوظ محليًا','Offline — saved locally'); cls='of'; }
+  else if(!fire){ txt=L('محفوظ محليًا','Saved locally'); cls='of'; }
+  else { txt=L('تم الحفظ والمزامنة','Saved & synced'); cls='ok'; }
+  el.className='tw-sync '+cls; el.innerHTML='<i></i><span>'+esc(txt)+'</span>';
+}
+
+function newId(){ var id=Date.now(), max=0; try{ DB.tasks.forEach(function(t){ if(typeof t.id==='number'&&t.id>max) max=t.id; }); }catch(e){} return id>max?id:max+1; }
+function defaultDept(){ var d=(me()&&me().department)||''; var ds=departments(); return ds.indexOf(d)>-1?d:(ds[0]||''); }
+function notifyUser(uid,type,title,body,tid){
+  try{ if(typeof window._ntfWriteForUser==='function' && uid!==me().id) window._ntfWriteForUser(uid,type,title,body,String(tid),type+':'+tid); }catch(e){}
+}
+function createTask(o){
+  var u=me(); if(!u) return null;
+  var title=String(o.title||'').trim(); if(!title) return null;
+  var assigned = (o.assignedTo&&o.assignedTo.length)?o.assignedTo.slice():[u.id];
+  var creator=null; try{ creator=getUser(u.id); }catch(e){}
+  var serial=''; try{ serial=getUserCode(creator||{name:'TK'}); }catch(e){}
+  var t={
+    id:newId(), serial:serial, title:title.slice(0,200), description:o.description||'', notes:o.notes||'',
+    department:o.department||defaultDept(), priority:o.priority||'medium', status:'pending',
+    assignedTo:assigned, deadline:o.deadline||todayStr(), startDate:'', duration:0, progress:0,
+    attachments:[], completionDate:null, completionTime:null, perUserStatus:{}, perUserCompletion:{},
+    createdBy:u.id, createdAt:todayStr(), recurring:'none'
+  };
+  if(o.star){ t.starBy={}; t.starBy[u.id]=true; }
+  if(o.myDay){ t.myDayBy={}; t.myDayBy[u.id]=todayStr(); }
+  if(o.list){ t.listBy={}; t.listBy[u.id]=addList(o.list); }
+  if(o.waiting){ t.waiting=o.waiting; }
+  if(o.emailRef){ t.emailRef=o.emailRef; }
+  DB.tasks.push(t); invalidate(); commit();
+  assigned.forEach(function(a){ if(a!==u.id) notifyUser(a,'new-task',t.title,'📋 '+t.title+(t.deadline?'\n📅 '+t.deadline:''),t.id); });
+  return t;
+}
+function applyStatus(t,val){
+  var u=me(), assigned=asg(t), now=Date.now(), d=todayStr(), tm=hhmm();
+  t.perUserStatus=t.perUserStatus||{}; t.perUserCompletion=t.perUserCompletion||{}; t._puslm=t._puslm||{};
+  var targets = mine(t) ? [u.id] : assigned;
+  targets.forEach(function(x){
+    t.perUserStatus[x]=val; t._puslm[x]=now;
+    if(val==='completed'){ if(!t.perUserCompletion[x]) t.perUserCompletion[x]={date:d,time:tm}; }
+    else delete t.perUserCompletion[x];
+  });
+  if(!assigned.length) t.status=val; else t.status=aggregate(t);
+  if(t.status==='completed'){ if(!t.completionDate){ t.completionDate=d; t.completionTime=tm; } t.progress=100; }
+  else { t.completionDate=null; t.completionTime=null; if(t.progress===100) t.progress=0; }
+  if(val==='completed' && t.createdBy && t.createdBy!==u.id){ notifyUser(t.createdBy,'status:completed',t.title,'✅ '+u.name+' — '+t.title,t.id); }
+  invalidate(); commit();
+}
+function toggleDone(t){ applyStatus(t, isDone(t)?'pending':'completed'); }
+function setField(t,k,v){ t[k]=v; commit(); }
+function mapBy(t,key,v,remove){ var u=me(); t[key]=t[key]||{}; if(remove) delete t[key][u.id]; else t[key][u.id]=v; commit(); invalidate(); }
+function toggleStar(t){ var u=me(); t.starBy=t.starBy||{}; t.starBy[u.id]=!isImportant(t); commit(); invalidate(); }
+function toggleMyDay(t){ if(inMyDay(t)) mapBy(t,'myDayBy',null,true); else mapBy(t,'myDayBy',todayStr()); }
+function removeTask(t){ try{ DB.tasks=DB.tasks.filter(function(x){ return x!==t && String(x.id)!==String(t.id); }); invalidate(); commit(); toast(L('🗑️ تم الحذف','🗑️ Deleted')); }catch(e){ toast('❌ '+e.message,'err'); } }
+
+/* ───────────── التعريف بالعروض ───────────── */
+var CNT_CACHE=null;
+function views(){
+  return {
+    myday:{ic:'sun', ar:'يومي', en:'My Day', f:function(t){ return isOpen(t) && inMyDay(t); }},
+    tasks:{ic:'tasks', ar:'جميع المهام', en:'All tasks', f:function(t){ return isOpen(t); }},
+    important:{ic:'star', ar:'المهام المهمة', en:'Important', f:function(t){ return isOpen(t) && isImportant(t); }},
+    planned:{ic:'planned', ar:'المجدولة', en:'Planned', f:function(t){ return isOpen(t) && !!dl(t); }},
+    overdue:{ic:'alert', ar:'المتأخرة', en:'Overdue', f:isOverdue},
+    emailtasks:{ic:'mailtask', ar:'مهام البريد', en:'Email tasks', f:function(t){ return !!t.emailRef && isOpen(t); }},
+    completed:{ic:'check', ar:'المكتملة', en:'Completed', f:isDone},
+    waitreply:{ic:'hourglass', ar:'بانتظار رد', en:'Awaiting reply', f:function(t){ return isOpen(t) && waitType(t)==='reply'; }},
+    waitother:{ic:'hourglass', ar:'بانتظار إجراء طرف آخر', en:'Awaiting others', f:function(t){ return isOpen(t) && waitType(t)==='other'; }},
+    highpri:{ic:'alert', ar:'عالية الأولوية', en:'High priority', f:function(t){ return isOpen(t) && (t.priority==='urgent'||t.priority==='high'); }},
+    duetoday:{ic:'planned', ar:'مستحقة اليوم', en:'Due today', f:isToday}
+  };
+}
+function counts(){
+  var v=visible(), V=views(), c={};
+  Object.keys(V).forEach(function(k){ c[k]=v.filter(V[k].f).length; });
+  c.depts={}; c.lists={};
+  v.forEach(function(t){ if(isOpen(t)){ if(t.department) c.depts[t.department]=(c.depts[t.department]||0)+1; var l=listOf(t); if(l) c.lists[l]=(c.lists[l]||0)+1; } });
+  return c;
+}
+function viewTitle(id){
+  var V=views();
+  if(V[id]) return L(V[id].ar,V[id].en);
+  var m={dashboard:['لوحة المتابعة','Dashboard'],email:['البريد الإلكتروني','Email'],calendar:['التقويم','Calendar'],settings:['الإعدادات','Settings']};
+  if(m[id]) return L(m[id][0],m[id][1]);
+  if(id.indexOf('list:')===0) return id.slice(5);
+  if(id.indexOf('dept:')===0) return id.slice(5);
+  return id;
+}
+function viewFilter(id){
+  var V=views(); if(V[id]) return V[id].f;
+  if(id.indexOf('list:')===0){ var n=id.slice(5); return function(t){ return isOpen(t) && listOf(t)===n; }; }
+  if(id.indexOf('dept:')===0){ var d=id.slice(5); return function(t){ return isOpen(t) && t.department===d; }; }
+  return function(){ return true; };
+}
+
+/* ───────────── الهيكل العام والقائمة الجانبية ───────────── */
+var root=null;
+function ensureShell(){
+  if(root) return root;
+  root=document.createElement('div'); root.id='pg-todo';
+  root.innerHTML='<div class="tw-top" id="tw-top"></div><div class="tw-body"><aside class="tw-side" id="tw-side"></aside><div class="tw-scrim" id="tw-scrim"></div><main class="tw-main" id="tw-main"></main><aside class="tw-detail" id="tw-detail" aria-label="details"></aside></div>';
+  document.body.appendChild(root);
+  root.addEventListener('click',onClick);
+  root.addEventListener('input',onInput);
+  root.addEventListener('change',onChange);
+  root.addEventListener('keydown',onKey);
+  return root;
+}
+function isOpenNow(){ return !!(root && root.classList.contains('tw-open')); }
+
+function renderTop(){
+  var u=me(); if(!u) return;
+  var t=$id('tw-top'); if(!t) return;
+  var q=S.q||'';
+  t.innerHTML=
+   '<button class="tw-ibtn" data-act="sbtoggle" title="'+esc(L('طي / فتح القائمة','Toggle menu'))+'" aria-label="menu">'+ic('menu',20)+'</button>'+
+   '<div class="tw-brand"><div class="lg">'+ic('check',17)+'</div><div><span class="t">'+esc(L('مهام المستودعات','Warehouse Tasks'))+'</span><small>'+esc(L('مساحة العمل','Workspace'))+'</small></div></div>'+
+   '<div class="tw-search">'+ic('search',16)+'<input id="tw-q" type="search" autocomplete="off" placeholder="'+esc(L('بحث في المهام…  ( / )','Search tasks…  ( / )'))+'" value="'+esc(q)+'"></div>'+
+   '<span id="tw-sync" class="tw-sync"></span>'+
+   '<button class="tw-ibtn" data-act="bell" title="'+esc(L('الإشعارات','Notifications'))+'">'+ic('bell',19)+'</button>'+
+   '<button class="tw-ibtn" data-act="theme" title="'+esc(L('الوضع الفاتح / الداكن','Light / dark'))+'">'+ic('moon',19)+'</button>'+
+   '<button class="tw-ibtn" data-act="lang" title="'+esc(L('English','العربية'))+'">'+ic('globe',19)+'</button>'+
+   '<button class="tw-ibtn" data-act="usermenu" title="'+esc(u.name)+'" style="width:auto;padding:0 2px"><span class="tw-av" style="background:'+avCol(u.id)+'">'+esc(userCode(u))+'</span></button>';
+  syncBadge();
+}
+
+function navItem(id,view,labelAr,labelEn,iconName,count,red){
+  var on=(S.view===view)?' on':'';
+  var lb=labelAr==null?esc(viewTitle(view)):esc(L(labelAr,labelEn));
+  return '<button class="tw-nav'+on+'" data-view="'+esc(view)+'" title="'+lb+'">'+ic(iconName,19)+'<span class="lb">'+lb+'</span>'+(count!=null&&count!==''?'<span class="ct'+(red&&count>0?' red':'')+'">'+count+'</span>':'')+'</button>';
+}
+function renderSide(){
+  var sd=$id('tw-side'); if(!sd||!me()) return;
+  var c=counts(), V=views(), u=me();
+  var h='<div class="tw-side-scroll">';
+  h+=navItem('db','dashboard',null,null,'dashboard','');
+  h+='<div class="tw-sep"></div>';
+  h+=navItem('md','myday',null,null,'sun',c.myday||'');
+  h+=navItem('tk','tasks',null,null,'tasks',c.tasks||'');
+  h+=navItem('im','important',null,null,'star',c.important||'');
+  h+=navItem('pl','planned',null,null,'planned',c.planned||'');
+  h+=navItem('od','overdue',null,null,'alert',c.overdue||'',true);
+  h+='<div class="tw-sep"></div>';
+  var mc=(OL.mail.unread!=null&&OL.state==='in')?OL.mail.unread:'';
+  h+=navItem('em','email',null,null,'mail',mc);
+  h+=navItem('et','emailtasks',null,null,'mailtask',c.emailtasks||'');
+  h+=navItem('ca','calendar',null,null,'calendar','');
+  h+='<div class="tw-sep"></div>';
+  var ln=listNames();
+  h+='<button class="tw-sec'+(openSections.lists?'':' shut')+'" data-sec="lists">'+esc(L('قوائمي','My lists'))+'<span class="chv">'+ic('chev',14)+'</span></button>';
+  if(openSections.lists){
+    ln.forEach(function(n){ h+='<button class="tw-nav sub'+(S.view==='list:'+n?' on':'')+'" data-view="list:'+esc(n)+'" data-list="'+esc(n)+'">'+ic('list',17)+'<span class="lb">'+esc(n)+'</span><span class="ct">'+(c.lists[n]||'')+'</span></button>'; });
+    h+='<button class="tw-newlist" data-act="newlist">'+ic('plus',17)+'<span>'+esc(L('قائمة جديدة','New list'))+'</span></button>';
+  }
+  var ds=departments(); var dsUse=ds.filter(function(d){ return isMgr()||c.depts[d]; });
+  h+='<button class="tw-sec'+(openSections.projects?'':' shut')+'" data-sec="projects">'+esc(L('المشاريع (الإدارات)','Projects (departments)'))+'<span class="chv">'+ic('chev',14)+'</span></button>';
+  if(openSections.projects){
+    dsUse.forEach(function(d){ h+='<button class="tw-nav sub'+(S.view==='dept:'+d?' on':'')+'" data-view="dept:'+esc(d)+'">'+ic('brief',17)+'<span class="lb">'+esc(d)+'</span><span class="ct">'+(c.depts[d]||'')+'</span></button>'; });
+    if(!dsUse.length) h+='<div class="tw-hint" style="padding-inline:36px">'+esc(L('لا توجد مهام مرتبطة بإدارات','No department tasks'))+'</div>';
+  }
+  h+='<div class="tw-sep"></div>';
+  h+=navItem('cp','completed',null,null,'check',c.completed||'');
+  /* الأقسام الإدارية الكلاسيكية (وظائف النظام الحالية) */
+  h+='<button class="tw-sec'+(openSections.classic?'':' shut')+'" data-sec="classic">'+esc(L('الأقسام الإدارية','Admin sections'))+'<span class="chv">'+ic('chev',14)+'</span></button>';
+  if(openSections.classic){
+    classicItems().forEach(function(it,i){ h+='<button class="tw-nav sub" data-classic="'+i+'">'+ic(it.i,17)+'<span class="lb">'+esc(L(it.ar,it.en))+'</span></button>'; });
+  }
+  h+='</div><div class="tw-side-foot">'+navItem('st','settings',null,null,'settings','')+'</div>';
+  sd.innerHTML=h;
+  sd.classList.toggle('col',!!S.sbCol);
+}
+function classicItems(){
+  var r=me()&&me().role, a=[];
+  if(r==='admin'||r==='manager'){
+    a.push({ar:'لوحة الإدارة الكلاسيكية',en:'Classic dashboard',i:'dashboard',f:function(){ legacy('mgr','ov'); }});
+    a.push({ar:'الموظفون',en:'Employees',i:'users',f:function(){ legacy('mgr','emps'); }});
+    a.push({ar:'الأرشيف',en:'Archive',i:'folder',f:function(){ legacy('mgr','arch'); }});
+    a.push({ar:'الملاحظات',en:'Notes',i:'note',f:function(){ legacy('mgr','notes'); }});
+    a.push({ar:'التقييم اليومي',en:'Daily rating',i:'planned',f:function(){ legacy('mgr','daily'); }});
+    if(r==='admin') a.push({ar:'لوحة النظام',en:'System admin',i:'settings',f:function(){ legacy('admin'); }});
+  } else {
+    a.push({ar:'لوحتي الكلاسيكية',en:'Classic dashboard',i:'dashboard',f:function(){ legacy('emp','dashboard'); }});
+    a.push({ar:'الأرشيف',en:'Archive',i:'folder',f:function(){ legacy('emp','arch'); }});
+    a.push({ar:'ملاحظاتي',en:'My notes',i:'note',f:function(){ legacy('emp','notes'); }});
+    a.push({ar:'التقييم اليومي',en:'Daily',i:'planned',f:function(){ legacy('emp','daily'); }});
+  }
+  return a;
+}
+function legacy(kind,tab){
+  closeWorkspace();
+  try{
+    if(kind==='mgr'){ initMgr(); setTimeout(function(){ try{ navigateMgr(tab); }catch(e){} },160); }
+    else if(kind==='emp'){ initEmp(); setTimeout(function(){ try{ navigateEmp(tab); }catch(e){} },160); }
+    else if(kind==='admin'){ initAdmin(); }
+  }catch(e){ console.error('[TW] legacy',e); }
+}
+
+/* ───────────── فتح/إغلاق ───────────── */
+function closeWorkspace(){ if(root) root.classList.remove('tw-open'); document.body.classList.remove('tw-on'); }
+TW.open=function(view){
+  if(TW.disabled || !me()) return false;
+  ensureShell();
+  try{ ['pg-login','pg-mgr','pg-emp','pg-admin'].forEach(function(p){ var el=$id(p); if(el) el.style.display='none'; }); }catch(e){}
+  try{ if(typeof sbHide==='function') sbHide(); }catch(e){}
+  root.classList.add('tw-open'); document.body.classList.add('tw-on');
+  if(view) S.view=view; else if(S.view==='dashboard' && !isMgr() && !TW._opened) S.view='myday';
+  TW._opened=true; S.sel=null; invalidate();
+  renderAll(); startTimers();
+  return true;
+};
+TW.close=closeWorkspace;
+TW.go=function(v){ goView(v); };
+function goView(v){
+  S.view=v; S.sel=null; S.q=''; invalidate(); mobSide(false);
+  var q=$id('tw-q'); if(q) q.value='';
+  renderAll();
+  if(v==='email') OL.ensureMail(); if(v==='calendar') OL.ensureCal();
+  var sc=$id('tw-scroll'); if(sc) sc.scrollTop=0;
+}
+function mobSide(on){ var sd=$id('tw-side'),sc=$id('tw-scrim'); if(sd) sd.classList.toggle('mob',!!on); if(sc) sc.classList.toggle('on',!!on); }
+
+function renderAll(){
+  if(!isOpenNow()) return;
+  invalidate(); renderTop(); renderSide(); renderMain(); renderDetail();
+}
+function refreshLight(){ if(!isOpenNow()) return; invalidate(); renderSide(); renderMain(true); renderDetail(true); }
+
+/* ───────────── العرض الرئيسي ───────────── */
+function renderMain(keepScroll){
+  var m=$id('tw-main'); if(!m) return;
+  var prev=$id('tw-scroll'), st=prev?prev.scrollTop:0, qf=document.activeElement&&document.activeElement.id==='tw-add-q'?document.activeElement.value:null;
+  var v=S.view, html='';
+  if(v==='dashboard') html=viewDashboard();
+  else if(v==='calendar') html=viewCalendar();
+  else if(v==='email') html=viewEmail();
+  else if(v==='settings') html=viewSettings();
+  else html=viewTasks(v);
+  m.innerHTML=html;
+  var sc=$id('tw-scroll');
+  if(sc && keepScroll) sc.scrollTop=st;
+  if(qf!=null){ var a=$id('tw-add-q'); if(a){ a.value=qf; a.focus(); } }
+}
+function head(title,iconName,sub,tools){
+  return '<div class="tw-head"><div><h1>'+ic(iconName,26)+esc(title)+'</h1>'+(sub?'<div class="sub">'+esc(sub)+'</div>':'')+'</div><div class="sp"></div>'+(tools||'')+'</div>';
+}
+function scopeTools(){
+  if(!isMgr()) return '';
+  return '<div class="tw-seg" role="group"><button data-act="scope" data-v="all" class="'+(scopeNow()==='all'?'on':'')+'">'+esc(L('الكل','Everyone'))+'</button><button data-act="scope" data-v="mine" class="'+(scopeNow()==='mine'?'on':'')+'">'+esc(L('مهامي','Mine'))+'</button></div>';
+}
+
+/* ── قوائم المهام ── */
+function applyFilters(list){
+  var q=(S.q||'').trim().toLowerCase();
+  return list.filter(function(t){
+    if(q){ var hay=(t.title+' '+(t.description||'')+' '+(t.notes||'')+' '+(t.serial||'')+' '+(t.department||'')+' '+asg(t).map(userName).join(' ')+' '+(t.emailRef?t.emailRef.subject:'')).toLowerCase(); if(hay.indexOf(q)<0) return false; }
+    if(S.fPri && t.priority!==S.fPri) return false;
+    if(S.fSta && eff(t)!==S.fSta) return false;
+    if(S.fDept && t.department!==S.fDept) return false;
+    if(S.fEmp && asg(t).indexOf(+S.fEmp)<0 && asg(t).indexOf(S.fEmp)<0) return false;
+    return true;
+  });
+}
+function priRank(t){ return PRI[t.priority]?PRI[t.priority].r:2; }
+function sortList(list,view){
+  var s=S.sort, a=list.slice();
+  var cmpDate=function(x,y){ var dx=dl(x)||'9999', dy=dl(y)||'9999'; return dx<dy?-1:dx>dy?1:0; };
+  var cmpPri=function(x,y){ return priRank(x)-priRank(y); };
+  var cmpTitle=function(x,y){ return String(x.title).localeCompare(String(y.title),lang()); };
+  if(view==='completed'){ return a.sort(function(x,y){ var dx=(x.completionDate||'')+(x.completionTime||''), dy=(y.completionDate||'')+(y.completionTime||''); return dx<dy?1:dx>dy?-1:0; }); }
+  if(s==='priority') a.sort(function(x,y){ return cmpPri(x,y)||cmpDate(x,y); });
+  else if(s==='date') a.sort(function(x,y){ return cmpDate(x,y)||cmpPri(x,y); });
+  else if(s==='title') a.sort(cmpTitle);
+  else if(s==='created') a.sort(function(x,y){ return (y.id||0)-(x.id||0); });
+  else a.sort(function(x,y){ var ox=isOverdue(x)?0:1, oy=isOverdue(y)?0:1; return (ox-oy)||cmpDate(x,y)||cmpPri(x,y)||((y.id||0)-(x.id||0)); });
+  return a;
+}
+function groupList(list,view){
+  var g=S.group; if(view==='planned' && g==='none') g='date';
+  if(g==='none') return [{k:'',items:list}];
+  var map={}, order=[], push=function(k,t,red){ if(!map[k]){ map[k]={k:k,items:[],red:red}; order.push(k); } map[k].items.push(t); };
+  var t0=todayStr();
+  list.forEach(function(t){
+    if(g==='date'){
+      var d=dl(t), k;
+      if(!d) k=L('بدون تاريخ','No date'); else if(d<t0) k=L('متأخرة','Overdue'); else if(d===t0) k=L('اليوم','Today'); else if(d===addDays(t0,1)) k=L('غدًا','Tomorrow'); else if(d<=addDays(t0,7)) k=L('خلال 7 أيام','Next 7 days'); else k=L('لاحقًا','Later');
+      push(k,t,d&&d<t0);
+    } else if(g==='priority') push(priLbl(t.priority||'medium'),t);
+    else if(g==='dept') push(t.department||L('بدون إدارة','No department'),t);
+    else if(g==='assignee'){ var as=asg(t); if(!as.length) push(L('غير مكلّف','Unassigned'),t); else as.forEach(function(x){ push(userName(x)||('#'+x),t); }); }
+  });
+  if(g==='date'){ var ord=[L('متأخرة','Overdue'),L('اليوم','Today'),L('غدًا','Tomorrow'),L('خلال 7 أيام','Next 7 days'),L('لاحقًا','Later'),L('بدون تاريخ','No date')]; order.sort(function(a,b){ return ord.indexOf(a)-ord.indexOf(b); }); }
+  if(g==='priority'){ var po=['urgent','high','medium','low'].map(priLbl); order.sort(function(a,b){ return po.indexOf(a)-po.indexOf(b); }); }
+  return order.map(function(k){ return map[k]; });
+}
+function rowHtml(t){
+  var u=me(), done=isDone(t), d=dl(t), meta=[], t0=todayStr();
+  if(d){ var cls=''; if(isOpen(t)){ if(d<t0) cls='red'; else if(d===t0) cls='amb'; } meta.push('<span class="m '+cls+'">'+ic('planned',13)+esc(fmtDate(d))+'</span>'); }
+  var st=eff(t); if(st==='in_progress'||st==='postponed'||st==='cancelled') meta.push('<span class="m acc">'+esc(staLbl(st))+'</span>');
+  if(t.priority && t.priority!=='medium') meta.push('<span class="m tw-pri"><i style="background:'+PRI[t.priority].c+'"></i>'+esc(priLbl(t.priority))+'</span>');
+  var steps=stepsOf(t); if(steps.length){ var dn=steps.filter(function(s){ return s.done; }).length; meta.push('<span class="m">'+ic('tasks',13)+dn+'/'+steps.length+'</span>'); }
+  if(inMyDay(t) && S.view!=='myday') meta.push('<span class="m">'+ic('sun',13)+esc(L('يومي','My Day'))+'</span>');
+  if(remindAt(t)) meta.push('<span class="m">'+ic('bell',13)+'</span>');
+  if(t.emailRef) meta.push('<span class="m acc">'+ic('mail',13)+'</span>');
+  if(waitType(t)) meta.push('<span class="m amb">'+ic('hourglass',13)+esc(waitType(t)==='reply'?L('بانتظار رد','Awaiting reply'):L('بانتظار طرف آخر','Awaiting other'))+'</span>');
+  if((t.description||t.notes)) meta.push('<span class="m">'+ic('note',13)+'</span>');
+  if(t.attachments && t.attachments.length) meta.push('<span class="m">'+ic('clip',13)+t.attachments.length+'</span>');
+  if(t.recurring && t.recurring!=='none') meta.push('<span class="m">'+ic('repeat',13)+'</span>');
+  var ln=listOf(t); if(ln && S.view.indexOf('list:')!==0) meta.push('<span class="m">'+ic('list',13)+esc(ln)+'</span>');
+  if(t.department && S.view.indexOf('dept:')!==0 && (isMgr()||true)) meta.push('<span class="m">'+ic('brief',13)+esc(t.department)+'</span>');
+  var as=asg(t), avs='';
+  if(as.length && (isMgr() || as.length>1 || as[0]!==u.id)){ avs='<div class="tw-avs">'+as.slice(0,3).map(function(id){ var x; try{ x=getUser(id); }catch(e){} return '<span class="tw-av sm" title="'+esc(x?x.name:'')+'" style="background:'+avCol(id)+'">'+esc(x?userCode(x):'?')+'</span>'; }).join('')+(as.length>3?'<span class="tw-av sm" style="background:#64748b">+'+(as.length-3)+'</span>':'')+'</div>'; }
+  return '<div class="tw-row'+(done?' dn':'')+(String(S.sel)===String(t.id)?' on':'')+'" data-id="'+esc(t.id)+'" tabindex="0">'+
+    '<button class="tw-chk'+(done?' done':'')+'" data-act="done" title="'+esc(done?L('إعادة فتح','Reopen'):L('إكمال','Complete'))+'" aria-label="complete"><i>'+ic('check',12).replace('<circle cx="12" cy="12" r="9"/>','')+'</i></button>'+
+    '<div class="tw-rm"><div class="tw-tt">'+esc(t.title)+'</div>'+(meta.length?'<div class="tw-meta">'+meta.join('')+'</div>':'')+'</div>'+avs+
+    '<button class="tw-star'+(isImportant(t)?' on':'')+'" data-act="star" title="'+esc(L('مهمة','Important'))+'" aria-label="important">'+ic('star',18)+'</button></div>';
+}
+var shown={};
+function viewTasks(v){
+  var title=viewTitle(v), V=views(), icon=(V[v]&&V[v].ic)||(v.indexOf('dept:')===0?'brief':'list');
+  var base=visible().filter(viewFilter(v));
+  var list=sortList(applyFilters(base),v), total=list.length;
+  var lim=shown[v]||200, cut=list.length>lim?list.slice(0,lim):list;
+  var sub=total+' '+L('مهمة','tasks')+(v==='myday'?' · '+fmtLong(todayStr()):'');
+  var sortSel='<select class="tw-sel" data-f="sort" title="'+esc(L('الترتيب','Sort'))+'"><option value="smart"'+(S.sort==='smart'?' selected':'')+'>'+esc(L('ترتيب ذكي','Smart'))+'</option><option value="date"'+(S.sort==='date'?' selected':'')+'>'+esc(L('حسب التاريخ','By date'))+'</option><option value="priority"'+(S.sort==='priority'?' selected':'')+'>'+esc(L('حسب الأولوية','By priority'))+'</option><option value="title"'+(S.sort==='title'?' selected':'')+'>'+esc(L('أبجديًا','A–Z'))+'</option><option value="created"'+(S.sort==='created'?' selected':'')+'>'+esc(L('الأحدث إضافة','Newest'))+'</option></select>';
+  var nAct=(S.group!=='none'?1:0)+(S.fPri?1:0)+(S.fSta?1:0)+(S.fDept?1:0)+(S.fEmp?1:0);
+  var filt='<select class="tw-sel" data-f="group" title="'+esc(L('التجميع','Group'))+'"><option value="none">'+esc(L('بدون تجميع','No grouping'))+'</option><option value="date"'+(S.group==='date'?' selected':'')+'>'+esc(L('تجميع: حسب الموعد','Group: by date'))+'</option><option value="priority"'+(S.group==='priority'?' selected':'')+'>'+esc(L('تجميع: حسب الأولوية','Group: by priority'))+'</option><option value="dept"'+(S.group==='dept'?' selected':'')+'>'+esc(L('تجميع: حسب الإدارة','Group: by department'))+'</option>'+(isMgr()?'<option value="assignee"'+(S.group==='assignee'?' selected':'')+'>'+esc(L('تجميع: حسب الموظف','Group: by employee'))+'</option>':'')+'</select>'+
+    '<select class="tw-sel" data-f="fPri" title="'+esc(L('الأولوية','Priority'))+'"><option value="">'+esc(L('كل الأولويات','All priorities'))+'</option>'+['urgent','high','medium','low'].map(function(p){ return '<option value="'+p+'"'+(S.fPri===p?' selected':'')+'>'+esc(priLbl(p))+'</option>'; }).join('')+'</select>'+
+    (v!=='completed'?'<select class="tw-sel" data-f="fSta" title="'+esc(L('الحالة','Status'))+'"><option value="">'+esc(L('كل الحالات','All statuses'))+'</option>'+['pending','in_progress','postponed'].map(function(p){ return '<option value="'+p+'"'+(S.fSta===p?' selected':'')+'>'+esc(staLbl(p))+'</option>'; }).join('')+'</select>':'')+
+    (isMgr()?'<select class="tw-sel" data-f="fDept" title="'+esc(L('الإدارة','Department'))+'"><option value="">'+esc(L('كل الإدارات','All departments'))+'</option>'+departments().map(function(d){ return '<option value="'+esc(d)+'"'+(S.fDept===d?' selected':'')+'>'+esc(d)+'</option>'; }).join('')+'</select><select class="tw-sel" data-f="fEmp" title="'+esc(L('الموظف','Employee'))+'"><option value="">'+esc(L('كل الموظفين','All employees'))+'</option>'+assignable().map(function(x){ return '<option value="'+x.id+'"'+(String(S.fEmp)===String(x.id)?' selected':'')+'>'+esc(x.name)+'</option>'; }).join('')+'</select>':'')+
+    (nAct?'<button class="tw-btn sm" data-act="clearfilters">'+esc(L('مسح التصفية','Clear'))+'</button>':'');
+  var tools=(v==='myday'?'':scopeTools())+sortSel+'<button class="tw-btn sm'+(nAct?' pri':'')+'" data-act="togglefilters" aria-expanded="'+(!!S.showFilters)+'">'+ic('filter',15)+esc(L('تصفية','Filter'))+(nAct?' ('+nAct+')':'')+'</button>';
+  var h=head(title,icon,sub,'<div class="tw-tools">'+tools+'</div>');
+  if(S.showFilters) h+='<div class="tw-filters">'+filt+'</div>';
+  h+='<div class="tw-scroll" id="tw-scroll"><div class="tw-wrap">';
+  if(v!=='completed' && ['waitreply','waitother','highpri','duetoday','emailtasks'].indexOf(v)<0) h+=quickAdd(v);
+  if(!cut.length){
+    h+='<div class="tw-empty">'+ic(icon,54)+'<b>'+esc(emptyMsg(v,base.length>0))+'</b><span>'+esc(L('استخدم شريط الإضافة بالأعلى لإنشاء مهمة جديدة.','Use the bar above to add a task.'))+'</span></div>';
+  } else {
+    groupList(cut,v).forEach(function(g){
+      if(g.k) h+='<div class="tw-grp'+(g.red?' red':'')+'">'+esc(g.k)+'<span class="n">'+g.items.length+'</span></div>';
+      h+='<div class="tw-rows">'+g.items.map(rowHtml).join('')+'</div>';
+    });
+    if(total>cut.length) h+='<button class="tw-btn tw-more" data-act="more">'+esc(L('عرض المزيد','Show more'))+' ('+(total-cut.length)+')</button>';
+  }
+  h+='</div></div>';
+  return h;
+}
+function emptyMsg(v,hasBase){
+  if(hasBase) return L('لا توجد نتائج مطابقة للتصفية','No tasks match your filters');
+  var m={myday:['يومك فارغ — أضف مهمة أو اختر من المقترحات','Your day is clear'],important:['لا توجد مهام مهمة','No important tasks'],overdue:['لا توجد مهام متأخرة 🎉','No overdue tasks'],completed:['لم تُكمل أي مهمة بعد','Nothing completed yet'],planned:['لا توجد مهام مجدولة','Nothing planned'],emailtasks:['لا توجد مهام مرتبطة بالبريد — حوّل رسالة من قسم البريد إلى مهمة','No email-linked tasks yet']};
+  return m[v]?L(m[v][0],m[v][1]):L('لا توجد مهام هنا بعد','No tasks here yet');
+}
+function quickAdd(v){
+  var opts='';
+  if(isMgr()){
+    opts+='<select class="tw-sel hid-m" id="tw-add-asg" title="'+esc(L('إسناد إلى','Assign to'))+'"><option value="">'+esc(L('لي','Me'))+'</option>'+assignable().filter(function(x){ return x.id!==me().id; }).map(function(x){ return '<option value="'+x.id+'">'+esc(x.name)+'</option>'; }).join('')+'</select>';
+  }
+  opts+='<select class="tw-sel hid-m" id="tw-add-pri" title="'+esc(L('الأولوية','Priority'))+'"><option value="medium">'+esc(L('متوسطة','Medium'))+'</option><option value="high">'+esc(L('عالية','High'))+'</option><option value="urgent">'+esc(L('عاجل','Urgent'))+'</option><option value="low">'+esc(L('منخفضة','Low'))+'</option></select>';
+  opts+='<input type="date" class="tw-sel hid-m" id="tw-add-date" title="'+esc(L('الموعد','Due date'))+'" style="max-width:138px"'+(v==='myday'||v==='planned'?' value="'+todayStr()+'"':'')+'>';
+  var sugg=(v==='myday')?suggestions():'';
+  return '<div class="tw-add"><div class="tw-addbox">'+ic('plus',20)+'<input class="q" id="tw-add-q" type="text" maxlength="200" autocomplete="off" placeholder="'+esc(L('إضافة مهمة… (اكتب ثم Enter)','Add a task… (type, then Enter)'))+'"><div class="tw-addopts">'+opts+'</div><button class="tw-btn pri" data-act="add">'+esc(L('إضافة','Add'))+'</button></div>'+
+    '<div class="tw-hint">'+esc(L('اختصارات: ! عالية · !! عاجل · @غدا · @اليوم · @2026-12-31 · #اسم_قائمة','Shortcuts: ! high · !! urgent · @tomorrow · @today · @2026-12-31 · #list_name'))+'</div></div>'+sugg;
+}
+function suggestions(){
+  var list=visible().filter(function(t){ return isOpen(t) && !inMyDay(t) && mine(t) && (isOverdue(t)||isToday(t)); }).slice(0,6);
+  if(!list.length) return '';
+  return '<div class="tw-panel" style="margin:4px 0 12px"><h3>'+ic('sun',17)+esc(L('مقترحة لليوم','Suggested for today'))+'<span class="sp"></span></h3>'+list.map(function(t){ return '<div class="tw-mini" data-id="'+esc(t.id)+'"><span class="dot" style="background:'+(PRI[t.priority]?PRI[t.priority].c:'#94a3b8')+'"></span><span class="t">'+esc(t.title)+'</span><span class="d'+(isOverdue(t)?' red':'')+'">'+esc(fmtDate(dl(t)))+'</span><button class="tw-btn sm" data-act="addday" data-id="'+esc(t.id)+'">'+ic('plus',13)+esc(L('إضافة ليومي','Add'))+'</button></div>'; }).join('')+'</div>';
+}
+function parseQuick(txt){
+  var o={priority:'',deadline:'',list:''};
+  var t0=todayStr();
+  txt=' '+txt+' ';
+  txt=txt.replace(/\s#([^\s#!@]+)/g,function(_,l){ o.list=l.replace(/_/g,' '); return ' '; });
+  txt=txt.replace(/\s@(اليوم|today)(?=\s)/gi,function(){ o.deadline=t0; return ' '; });
+  txt=txt.replace(/\s@(غدا|غدًا|غداً|tomorrow)(?=\s)/gi,function(){ o.deadline=addDays(t0,1); return ' '; });
+  txt=txt.replace(/\s@\+(\d{1,3})(?=\s)/g,function(_,n){ o.deadline=addDays(t0,+n); return ' '; });
+  txt=txt.replace(/\s@(\d{4}-\d{2}-\d{2})(?=\s)/g,function(_,d){ o.deadline=d; return ' '; });
+  txt=txt.replace(/\s(!!)(?=\s)/g,function(){ o.priority='urgent'; return ' '; });
+  txt=txt.replace(/\s(!)(?=\s)/g,function(){ if(!o.priority) o.priority='high'; return ' '; });
+  o.title=txt.replace(/\s+/g,' ').trim();
+  return o;
+}
+function doAdd(){
+  var inp=$id('tw-add-q'); if(!inp) return;
+  var raw=inp.value.trim(); if(!raw) return;
+  var p=parseQuick(raw); if(!p.title){ return; }
+  var v=S.view, o={title:p.title};
+  var selP=$id('tw-add-pri'), selD=$id('tw-add-date'), selA=$id('tw-add-asg');
+  o.priority=p.priority||(selP&&selP.value)||'medium';
+  o.deadline=p.deadline||(selD&&selD.value)||'';
+  if(selA&&selA.value) o.assignedTo=[+selA.value];
+  if(p.list) o.list=p.list;
+  if(v==='myday'){ o.myDay=true; if(!o.deadline) o.deadline=todayStr(); }
+  if(v==='important') o.star=true;
+  if(v==='planned' && !o.deadline) o.deadline=todayStr();
+  if(v.indexOf('list:')===0 && !o.list) o.list=v.slice(5);
+  if(v.indexOf('dept:')===0) o.department=v.slice(5);
+  var t=createTask(o); if(!t) return;
+  inp.value=''; toast(L('✅ تمت إضافة المهمة','✅ Task added'));
+  refreshLight(); var a=$id('tw-add-q'); if(a) a.focus();
+}
+
+/* ───────────── حوارات وقوائم صغيرة ───────────── */
+function dlg(o){
+  return new Promise(function(res){
+    var bg=document.createElement('div'); bg.className='tw-dlg-bg';
+    bg.innerHTML='<div class="tw-dlg" role="dialog" aria-modal="true"><h4>'+esc(o.title||'')+'</h4>'+(o.text?'<p>'+esc(o.text)+'</p>':'')+(o.input!=null?'<input type="text" maxlength="60" value="'+esc(o.input)+'">':'')+'<div class="bt"><button class="tw-btn" data-r="0">'+esc(o.cancel||L('إلغاء','Cancel'))+'</button><button class="tw-btn '+(o.danger?'dng':'pri')+'" data-r="1">'+esc(o.ok||L('موافق','OK'))+'</button></div></div>';
+    (root||document.body).appendChild(bg);
+    var inp=bg.querySelector('input'); if(inp){ inp.focus(); inp.select(); } else { var b=bg.querySelector('[data-r="1"]'); if(b) b.focus(); }
+    function done(v){ bg.remove(); res(v); }
+    bg.addEventListener('click',function(e){ var r=e.target.closest&&e.target.closest('[data-r]'); if(r){ done(r.getAttribute('data-r')==='1'?(inp?inp.value:true):null); } else if(e.target===bg) done(null); });
+    bg.addEventListener('keydown',function(e){ if(e.key==='Escape') done(null); if(e.key==='Enter'){ done(inp?inp.value:true); } });
+  });
+}
+var menuEl=null;
+function closeMenu(){ if(menuEl){ menuEl.remove(); menuEl=null; } }
+function popMenu(anchor,header,items){
+  closeMenu();
+  var m=document.createElement('div'); m.className='tw-menu';
+  m.innerHTML=(header?'<div class="hd">'+header+'</div>':'')+items.map(function(it,i){ return '<button data-mi="'+i+'">'+ic(it.i,17)+'<span>'+esc(it.t)+'</span></button>'; }).join('');
+  document.body.appendChild(m); menuEl=m;
+  var r=anchor.getBoundingClientRect(), mw=m.offsetWidth, mh=m.offsetHeight;
+  var rtl=document.documentElement.dir==='rtl';
+  var x=rtl?r.left:r.right-mw; if(x<8) x=8; if(x+mw>innerWidth-8) x=innerWidth-mw-8;
+  m.style.left=x+'px'; m.style.top=Math.min(r.bottom+6,innerHeight-mh-8)+'px';
+  m.addEventListener('click',function(e){ var b=e.target.closest('[data-mi]'); if(!b) return; var it=items[+b.getAttribute('data-mi')]; closeMenu(); if(it&&it.f) it.f(); });
+  setTimeout(function(){ document.addEventListener('click',closeMenu,{once:true}); },0);
+}
+
+/* ───────────── لوحة التفاصيل ───────────── */
+function renderDetail(soft){
+  var d=$id('tw-detail'); if(!d) return;
+  if(S.view==='email' && OL.mail.sel){ d.innerHTML=OL.detailHtml(); d.classList.add('open'); return; }
+  var t=S.sel?getTask(S.sel):null;
+  if(!t){ d.classList.remove('open'); d.innerHTML=''; S.sel=null; return; }
+  if(soft && d.classList.contains('open') && d.contains(document.activeElement) && document.activeElement.matches('input,textarea,select')) return; /* لا نقاطع الكتابة */
+  var u=me(), core=canCore(t), done=isDone(t), st=eff(t), as=asg(t);
+  var steps=stepsOf(t), rm=remindAt(t);
+  var h='<div class="tw-d-top"><button class="tw-ibtn" data-act="closed" title="'+esc(L('إغلاق','Close'))+'">'+ic('x',19)+'</button><span class="sp"></span>'+
+    '<button class="tw-btn sm" data-act="openfull" title="'+esc(L('المحرر الكامل (مرفقات، تكرار…)','Full editor (attachments, recurrence…)'))+'">'+ic('edit',14)+esc(L('المحرر الكامل','Full editor'))+'</button>'+
+    (canDelete(t)?'<button class="tw-ibtn" data-act="delete" title="'+esc(L('حذف','Delete'))+'" style="color:var(--tw-red)">'+ic('trash',18)+'</button>':'')+'</div>';
+  h+='<div class="tw-d-body" data-id="'+esc(t.id)+'">';
+  h+='<div class="tw-d-title"><button class="tw-chk'+(done?' done':'')+'" data-act="ddone" style="margin-top:3px"><i>'+ic('check',12).replace('<circle cx="12" cy="12" r="9"/>','')+'</i></button><textarea data-f="title" rows="1" maxlength="200" aria-label="title">'+esc(t.title)+'</textarea><button class="tw-star'+(isImportant(t)?' on':'')+'" data-act="dstar" style="margin-top:2px">'+ic('star',20)+'</button></div>';
+  if(t.serial) h+='<div class="tw-hint" style="margin:-8px 0 0">'+esc(t.serial)+(t.createdBy?' · '+esc(L('أنشأها','By'))+' '+esc(userName(t.createdBy)):'')+'</div>';
+  /* الخطوات */
+  var sdone=steps.filter(function(s){ return s.done; }).length;
+  h+='<div class="tw-card tw-steps">';
+  steps.forEach(function(s){ h+='<div class="tw-step'+(s.done?' dn':'')+'" data-sid="'+esc(s.id)+'"><button class="tw-chk'+(s.done?' done':'')+'" data-act="stepdone"><i>'+ic('check',11).replace('<circle cx="12" cy="12" r="9"/>','')+'</i></button><input class="t" type="text" data-f="steptext" value="'+esc(s.text)+'" maxlength="200"><button class="x" data-act="stepdel" title="'+esc(L('حذف الخطوة','Remove'))+'">'+ic('x',14)+'</button></div>'; });
+  h+='<div class="tw-step new"><span style="width:26px;display:grid;place-items:center;color:var(--tw-acc)">'+ic('plus',17)+'</span><input class="t" id="tw-newstep" type="text" data-f="newstep" maxlength="200" placeholder="'+esc(steps.length?L('خطوة تالية…','Next step…'):L('إضافة خطوة','Add step'))+'"></div></div>';
+  if(steps.length) h+='<div class="tw-hint" style="margin:-6px 0 0">'+sdone+'/'+steps.length+' '+esc(L('خطوات مكتملة','steps done'))+'</div>';
+  /* الجدولة */
+  h+='<div class="tw-card">'+
+   '<div class="tw-line btn'+(inMyDay(t)?' on':'')+'" data-act="dmyday">'+ic('sun',18)+'<span>'+esc(inMyDay(t)?L('مُضافة إلى يومي','Added to My Day'):L('إضافة إلى يومي','Add to My Day'))+'</span></div>'+
+   '<div class="tw-line">'+ic('planned',18)+'<span class="k">'+esc(L('الاستحقاق','Due'))+'</span><span class="v"><input type="date" data-f="deadline" value="'+esc(dl(t))+'"'+(core?'':' disabled')+'></span></div>'+
+   '<div class="tw-line">'+ic('bell',18)+'<span class="k">'+esc(L('تذكير','Reminder'))+'</span><span class="v"><input type="datetime-local" data-f="remind" value="'+esc(rm)+'">'+(rm?'<button class="tw-ibtn" style="width:26px;height:26px" data-act="remindclear" title="'+esc(L('إزالة','Clear'))+'">'+ic('x',14)+'</button>':'')+'</span></div>'+
+   '<div class="tw-line" style="border-top:0;padding-top:0"><span class="v tw-chips" style="justify-content:flex-start;padding-inline-start:28px"><button class="tw-chip" data-act="remindpre" data-v="1h">'+esc(L('بعد ساعة','In 1h'))+'</button><button class="tw-chip" data-act="remindpre" data-v="tom">'+esc(L('غدًا 9 ص','Tomorrow 9am'))+'</button><button class="tw-chip" data-act="remindpre" data-v="due">'+esc(L('صباح الاستحقاق','Due-day 9am'))+'</button></span></div>'+
+   '<div class="tw-line">'+ic('alert',18)+'<span class="k">'+esc(L('الأولوية','Priority'))+'</span><span class="v"><select data-f="priority"'+(core?'':' disabled')+'>'+['urgent','high','medium','low'].map(function(p){ return '<option value="'+p+'"'+(t.priority===p?' selected':'')+'>'+esc(priLbl(p))+'</option>'; }).join('')+'</select></span></div>'+
+   '<div class="tw-line">'+ic('check',18)+'<span class="k">'+esc(L('الحالة','Status'))+'</span><span class="v"><select data-f="status">'+['pending','in_progress','completed','postponed','cancelled'].map(function(p){ return '<option value="'+p+'"'+(st===p?' selected':'')+'>'+esc(staLbl(p))+'</option>'; }).join('')+'</select></span></div>'+
+   '</div>';
+  /* التنظيم والإسناد */
+  var ln=listOf(t), lns=listNames();
+  h+='<div class="tw-card">'+
+   '<div class="tw-line">'+ic('list',18)+'<span class="k">'+esc(L('القائمة','List'))+'</span><span class="v"><select data-f="list"><option value="">'+esc(L('— بدون —','— None —'))+'</option>'+lns.map(function(n){ return '<option value="'+esc(n)+'"'+(ln===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'<option value="__new">＋ '+esc(L('قائمة جديدة…','New list…'))+'</option></select></span></div>'+
+   '<div class="tw-line">'+ic('brief',18)+'<span class="k">'+esc(L('الإدارة','Department'))+'</span><span class="v"><select data-f="department"'+(core?'':' disabled')+'>'+(t.department&&departments().indexOf(t.department)<0?'<option selected>'+esc(t.department)+'</option>':'')+departments().map(function(x){ return '<option value="'+esc(x)+'"'+(t.department===x?' selected':'')+'>'+esc(x)+'</option>'; }).join('')+'</select></span></div>';
+  if(isMgr()){
+    h+='<details class="tw-line" style="display:block;padding:0"><summary style="list-style:none;display:flex;align-items:center;gap:10px;min-height:42px;padding:6px 12px;cursor:pointer">'+ic('users',18)+'<span class="k" style="min-width:78px;color:var(--tw-tx2)">'+esc(L('المكلّفون','Assignees'))+'</span><span class="v" style="flex:1;display:flex;justify-content:flex-end">'+as.slice(0,4).map(function(id){ var x; try{ x=getUser(id); }catch(e){} return '<span class="tw-av sm" style="background:'+avCol(id)+'" title="'+esc(x?x.name:'')+'">'+esc(x?userCode(x):'?')+'</span>'; }).join('')+(as.length?'':'<span style="color:var(--tw-tx3)">'+esc(L('غير محدد','None'))+'</span>')+'</span></summary><div class="tw-asg">'+assignable().map(function(x){ return '<label><input type="checkbox" data-f="assign" value="'+x.id+'"'+(as.indexOf(x.id)>-1?' checked':'')+'><span class="tw-av sm" style="background:'+avCol(x.id)+';margin:0">'+esc(userCode(x))+'</span><span>'+esc(x.name)+'</span></label>'; }).join('')+'</div></details>';
+  } else {
+    h+='<div class="tw-line">'+ic('users',18)+'<span class="k">'+esc(L('المكلّفون','Assignees'))+'</span><span class="v">'+esc(as.map(userName).filter(Boolean).join('، ')||'—')+'</span></div>';
+  }
+  h+='</div>';
+  /* بانتظار */
+  var w=t.waiting||{};
+  h+='<div class="tw-card"><div class="tw-line">'+ic('hourglass',18)+'<span class="k">'+esc(L('بانتظار','Waiting'))+'</span><span class="v"><select data-f="waittype"><option value="">'+esc(L('— لا شيء —','— Nothing —'))+'</option><option value="reply"'+(w.type==='reply'?' selected':'')+'>'+esc(L('ردّ','A reply'))+'</option><option value="other"'+(w.type==='other'?' selected':'')+'>'+esc(L('إجراء من طرف آخر','Action by someone else'))+'</option></select></span></div>'+
+   (w.type?'<div class="tw-line">'+ic('user',18)+'<span class="k">'+esc(L('من / الجهة','From / party'))+'</span><span class="v"><input type="text" data-f="waiton" value="'+esc(w.on||'')+'" maxlength="80" placeholder="'+esc(L('اسم الشخص أو الجهة','Person or party'))+'" style="text-align:end"></span></div>':'')+'</div>';
+  if(t.emailRef){ var er=t.emailRef; h+='<div class="tw-card"><div class="tw-line">'+ic('mail',18)+'<span style="flex:1;min-width:0"><b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(er.subject||'')+'</b><small style="color:var(--tw-tx3)">'+esc(er.fromName||er.from||'')+'</small></span>'+(er.webLink?'<a class="tw-btn sm" target="_blank" rel="noopener" href="'+esc(er.webLink)+'">'+ic('ext',13)+esc(L('فتح في Outlook','Open in Outlook'))+'</a>':'')+'</div></div>'; }
+  h+='<div class="tw-lbl">'+esc(L('الوصف','DESCRIPTION'))+'</div><div class="tw-card"><textarea class="tw-ta" data-f="description" placeholder="'+esc(L('أضف وصفًا للمهمة…','Add a description…'))+'">'+esc(t.description||'')+'</textarea></div>';
+  h+='<div class="tw-lbl">'+esc(L('ملاحظات','NOTES'))+'</div><div class="tw-card"><textarea class="tw-ta" data-f="notes" placeholder="'+esc(L('ملاحظات ومتابعات…','Notes & follow-ups…'))+'">'+esc(t.notes||'')+'</textarea></div>';
+  if(t.attachments&&t.attachments.length) h+='<div class="tw-hint">'+ic('clip',13)+' '+t.attachments.length+' '+esc(L('مرفق — يُدار من المحرر الكامل','attachment(s) — manage in full editor'))+'</div>';
+  if(done&&t.completionDate) h+='<div class="tw-hint">'+esc(L('اكتملت في','Completed on'))+' '+esc(t.completionDate)+(t.completionTime?' '+esc(t.completionTime):'')+'</div>';
+  h+='</div><div class="tw-d-foot"><span id="tw-d-state">'+esc(t.createdAt?(L('أُنشئت ','Created ')+t.createdAt):'')+'</span><span class="sp"></span><span>'+esc(L('الحفظ تلقائي','Auto-saved'))+'</span></div>';
+  d.innerHTML=h; d.classList.add('open');
+  var ta=d.querySelector('textarea[data-f=title]'); if(ta) autoH(ta);
+}
+function autoH(ta){ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,160)+'px'; }
+function selectTask(id){ S.sel=id; if(S.view==='email') OL.mail.sel=null; var rows=document.querySelectorAll('#tw-main .tw-row'); rows.forEach(function(r){ r.classList.toggle('on',r.getAttribute('data-id')===String(id)); }); renderDetail(); if(innerWidth<=1180){} }
+function closeDetail(){ S.sel=null; OL.mail.sel=null; document.querySelectorAll('#tw-main .tw-row.on,.tw-mrow.on').forEach(function(r){ r.classList.remove('on'); }); renderDetail(); }
+function parseLocalDT(s){ return s?new Date(s):null; }
+function presetRemind(t,v){
+  var d=new Date();
+  if(v==='1h') d=new Date(Date.now()+3600000);
+  else if(v==='tom'){ d=new Date(); d.setDate(d.getDate()+1); d.setHours(9,0,0,0); }
+  else if(v==='due'){ var due=dl(t); if(!due) { toast(L('حدّد موعد الاستحقاق أولًا','Set a due date first'),'err'); return; } d=parseYmd(due); d.setHours(9,0,0,0); }
+  var iso=ymd(d)+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  mapBy(t,'reminderBy',iso); clearFired(t.id); renderDetail();
+}
+
+/* ───────────── معالجة الأحداث ───────────── */
+function onKey(e){
+  var tg=e.target;
+  if(e.key==='Enter' && tg.id==='tw-add-q'){ e.preventDefault(); doAdd(); return; }
+  if(e.key==='Enter' && tg.getAttribute && tg.getAttribute('data-f')==='newstep'){ e.preventDefault(); addStep(tg); return; }
+  if(e.key==='Enter' && tg.getAttribute && tg.getAttribute('data-f')==='steptext'){ e.preventDefault(); tg.blur(); return; }
+  if(e.key==='Enter' && tg.id==='tw-q'){ e.preventDefault(); return; }
+  if((e.key==='Enter'||e.key===' ') && tg.classList && tg.classList.contains('tw-row')){ e.preventDefault(); selectTask(tg.getAttribute('data-id')); return; }
+  if(e.key==='Escape'){ if(S.sel||OL.mail.sel) closeDetail(); else if(S.q){ S.q=''; var q=$id('tw-q'); if(q) q.value=''; refreshLight(); } }
+}
+function addStep(inp){
+  var t=getTask(S.sel); var v=inp.value.trim(); if(!t||!v) return;
+  t.steps=stepsOf(t).concat([{id:'s'+Date.now().toString(36)+Math.random().toString(36).slice(2,4),text:v.slice(0,200),done:false}]);
+  syncProgress(t); commit(); renderDetail(); renderMain(true); var n=$id('tw-newstep'); if(n) n.focus();
+}
+function syncProgress(t){ var s=stepsOf(t); if(s.length && !isDone(t)){ t.progress=Math.round(s.filter(function(x){ return x.done; }).length/s.length*100); if(t.progress===100) t.progress=99; } }
+var onInput=function(e){
+  var el=e.target, f=el.getAttribute&&el.getAttribute('data-f');
+  if(el.id==='tw-q'){ S.q=el.value; deb_search(); return; }
+  if(!f) return;
+  var t=S.sel?getTask(S.sel):null; if(!t) return;
+  if(f==='title'){ autoH(el); var v=el.value.trim(); if(v){ t.title=v.slice(0,200); commit(); var r=document.querySelector('#tw-main .tw-row[data-id="'+t.id+'"] .tw-tt'); if(r) r.textContent=t.title; } }
+  else if(f==='description'||f==='notes'){ t[f]=el.value; commit(); }
+  else if(f==='steptext'){ var sid=el.closest('.tw-step').getAttribute('data-sid'); var s=stepsOf(t).find(function(x){ return x.id===sid; }); if(s){ s.text=el.value.slice(0,200); commit(); } }
+  else if(f==='waiton'){ t.waiting=t.waiting||{}; t.waiting.on=el.value; commit(); }
+};
+var deb_search=debounce(function(){ if(['dashboard','settings','calendar'].indexOf(S.view)>-1 && S.q.trim()){ S.view='tasks'; renderSide(); } if(S.view==='email'){ OL.mail.q=S.q; OL.loadMail(true); return; } renderMain(); var q=$id('tw-q'); },220);
+var onChange=function(e){
+  var el=e.target, f=el.getAttribute&&el.getAttribute('data-f'); if(!f) return;
+  if(f==='sort'||f==='group'||f==='fPri'||f==='fSta'||f==='fDept'||f==='fEmp'){ S[f]=el.value; saveUi(); renderMain(); return; }
+  if(f==='mailfilter'){ S.mailFilter=el.value; saveUi(); renderMain(); return; }
+  if(f==='period'){ S.period=+el.value; saveUi(); renderMain(); return; }
+  var t=S.sel?getTask(S.sel):null; if(!t) return;
+  if(f==='deadline'){ if(!canCore(t)) return; t.deadline=el.value; commit(); invalidate(); refreshLight(); }
+  else if(f==='priority'){ if(!canCore(t)) return; t.priority=el.value; commit(); refreshLight(); }
+  else if(f==='department'){ if(!canCore(t)) return; t.department=el.value; commit(); refreshLight(); }
+  else if(f==='status'){ applyStatus(t,el.value); refreshLight(); renderDetail(); }
+  else if(f==='remind'){ if(el.value){ mapBy(t,'reminderBy',el.value); clearFired(t.id); } else mapBy(t,'reminderBy',null,true); renderDetail(); renderMain(true); }
+  else if(f==='list'){
+    if(el.value==='__new'){ dlg({title:L('قائمة جديدة','New list'),input:'',ok:L('إنشاء','Create')}).then(function(n){ if(n&&String(n).trim()){ var nm=addList(n); mapBy(t,'listBy',nm); refreshLight(); } else renderDetail(); }); return; }
+    if(el.value) mapBy(t,'listBy',el.value); else mapBy(t,'listBy',null,true);
+    refreshLight();
+  }
+  else if(f==='assign'){
+    var ids=Array.prototype.map.call(document.querySelectorAll('#tw-detail input[data-f=assign]:checked'),function(c){ return +c.value; });
+    if(!ids.length){ el.checked=true; toast(L('يجب تكليف شخص واحد على الأقل','At least one assignee is required'),'err'); return; }
+    var before=asg(t); t.assignedTo=ids; commit(); invalidate();
+    ids.forEach(function(a){ if(before.indexOf(a)<0) notifyUser(a,'new-task',t.title,'📋 '+t.title+(dl(t)?'\n📅 '+dl(t):''),t.id); });
+    refreshLight();
+  }
+  else if(f==='waittype'){ if(el.value){ t.waiting=Object.assign({},t.waiting||{},{type:el.value,since:(t.waiting&&t.waiting.since)||todayStr()}); } else delete t.waiting; commit(); renderDetail(); refreshLight(); }
+  else if(f==='steptext'){ renderMain(true); }
+};
+var onClick=function(e){
+  var tg=e.target;
+  var nav=tg.closest('[data-view]'); if(nav && !tg.closest('[data-act]')){ goView(nav.getAttribute('data-view')); return; }
+  var sec=tg.closest('[data-sec]'); if(sec){ var k=sec.getAttribute('data-sec'); openSections[k]=!openSections[k]; lsSet('tw_open',openSections); renderSide(); return; }
+  var cl=tg.closest('[data-classic]'); if(cl){ var it=classicItems()[+cl.getAttribute('data-classic')]; if(it) it.f(); return; }
+  var a=tg.closest('[data-act]');
+  if(a){ var act=a.getAttribute('data-act'); if(handleAct(act,a,e)) return; }
+  var row=tg.closest('.tw-row[data-id],.tw-mini[data-id],.tw-tbl tr[data-id]');
+  if(row){ selectTask(row.getAttribute('data-id')); return; }
+  var mr=tg.closest('.tw-mrow[data-mid]'); if(mr){ OL.selectMail(mr.getAttribute('data-mid')); return; }
+  var cd=tg.closest('.tw-cd[data-day]'); if(cd){ S.calDay=cd.getAttribute('data-day'); renderMain(true); return; }
+  if(tg.id==='tw-scrim') mobSide(false);
+};
+function handleAct(act,a,e){
+  var id=(a.closest('[data-id]')||{getAttribute:function(){return null;}}).getAttribute('data-id');
+  var t=id?getTask(id):null, cur=S.sel?getTask(S.sel):null;
+  switch(act){
+    case 'sbtoggle': if(innerWidth<=900){ var on=!$id('tw-side').classList.contains('mob'); mobSide(on); } else { S.sbCol=!S.sbCol; saveUi(); $id('tw-side').classList.toggle('col',S.sbCol); } return true;
+    case 'bell': try{ if(window.NTF&&NTF.openPanel) NTF.openPanel(); else toggleNotifPanel(isMgr()?'mgr':'emp'); }catch(x){} return true;
+    case 'theme': try{ toggleTheme(); }catch(x){} return true;
+    case 'lang': try{ toggleLang(); }catch(x){} setTimeout(function(){ renderAll(); },30); return true;
+    case 'usermenu': var u=me(); popMenu(a,'<b>'+esc(u.name)+'</b><br>'+esc(u.email||''),[
+        {i:'settings',t:L('الإعدادات','Settings'),f:function(){ goView('settings'); }},
+        {i:'key',t:L('تغيير كلمة المرور','Change password'),f:function(){ try{ openModal('ov-chpw'); }catch(x){} }},
+        {i:'logout',t:L('تسجيل الخروج','Sign out'),f:function(){ closeWorkspace(); try{ doLogout(); }catch(x){} }}]); return true;
+    case 'newlist': dlg({title:L('قائمة جديدة','New list'),input:'',ok:L('إنشاء','Create')}).then(function(n){ if(n&&String(n).trim()){ var nm=addList(n); S.view='list:'+nm; renderAll(); } }); return true;
+    case 'scope': S.scope=a.getAttribute('data-v'); saveUi(); invalidate(); renderAll(); return true;
+    case 'more': shown[S.view]=(shown[S.view]||200)+200; renderMain(true); return true;
+    case 'add': doAdd(); return true;
+    case 'done': if(t){ toggleDone(t); e.stopPropagation(); refreshLight(); } return true;
+    case 'star': if(t){ toggleStar(t); refreshLight(); } return true;
+    case 'addday': if(t){ mapBy(t,'myDayBy',todayStr()); refreshLight(); } return true;
+    case 'closed': closeDetail(); return true;
+    case 'openfull': if(cur){ try{ openTaskModal(cur.id); }catch(x){ toast('❌ '+x.message,'err'); } } return true;
+    case 'delete': if(cur){ var tt=cur; dlg({title:L('حذف المهمة؟','Delete task?'),text:'"'+tt.title+'" — '+L('لا يمكن التراجع عن هذا الإجراء.','This cannot be undone.'),ok:L('حذف','Delete'),danger:true}).then(function(ok){ if(ok){ removeTask(tt); S.sel=null; renderAll(); } }); } return true;
+    case 'ddone': if(cur){ toggleDone(cur); refreshLight(); renderDetail(); } return true;
+    case 'dstar': if(cur){ toggleStar(cur); refreshLight(); renderDetail(); } return true;
+    case 'dmyday': if(cur){ toggleMyDay(cur); refreshLight(); renderDetail(); } return true;
+    case 'remindclear': if(cur){ mapBy(cur,'reminderBy',null,true); renderDetail(); renderMain(true); } return true;
+    case 'remindpre': if(cur){ presetRemind(cur,a.getAttribute('data-v')); renderMain(true); } return true;
+    case 'stepdone': if(cur){ var sid=a.closest('.tw-step').getAttribute('data-sid'); var s=stepsOf(cur).find(function(x){ return x.id===sid; }); if(s){ s.done=!s.done; syncProgress(cur); commit(); renderDetail(); renderMain(true); } } return true;
+    case 'stepdel': if(cur){ var sid2=a.closest('.tw-step').getAttribute('data-sid'); cur.steps=stepsOf(cur).filter(function(x){ return x.id!==sid2; }); syncProgress(cur); commit(); renderDetail(); renderMain(true); } return true;
+    case 'togglefilters': S.showFilters=!S.showFilters; renderMain(true); return true;
+    case 'clearfilters': S.group='none'; S.fPri=S.fSta=S.fDept=S.fEmp=''; saveUi(); renderMain(true); return true;
+    case 'kpi': goView(a.getAttribute('data-v')); return true;
+    case 'calprev': S.calMonth=addMonths(calBase(),-1); OL.ensureCal(); renderMain(); return true;
+    case 'calnext': S.calMonth=addMonths(calBase(),1); OL.ensureCal(); renderMain(); return true;
+    case 'caltoday': S.calMonth=null; S.calDay=todayStr(); OL.ensureCal(); renderMain(); return true;
+    default: return OL.act(act,a,e) || SET.act(act,a,e);
+  }
+}
+
+/* ───────────── لوحة المتابعة الإدارية ───────────── */
+function compDate(t){ var u=me(); if(u && mine(t) && t.perUserCompletion && t.perUserCompletion[u.id]) return t.perUserCompletion[u.id].date||''; return t.completionDate||''; }
+function miniRow(t,dateTxt,red){
+  return '<div class="tw-mini" data-id="'+esc(t.id)+'"><span class="dot" style="background:'+(PRI[t.priority]?PRI[t.priority].c:'#94a3b8')+'"></span><span class="t">'+esc(t.title)+'</span>'+(isMgr()&&asg(t).length?'<span class="d">'+esc(userName(asg(t)[0])+(asg(t).length>1?' +'+(asg(t).length-1):''))+'</span>':'')+'<span class="d'+(red?' red':'')+'">'+esc(dateTxt||'')+'</span></div>';
+}
+function panel(title,icon,list,more,fmt){
+  var h='<div class="tw-panel"><h3>'+ic(icon,17)+esc(title)+'<span class="sp"></span>'+(more?'<a data-act="kpi" data-v="'+more+'">'+esc(L('عرض الكل','View all'))+' ('+list.length+')</a>':'')+'</h3>';
+  if(!list.length) h+='<div class="tw-none">'+esc(L('لا توجد عناصر','Nothing here'))+'</div>';
+  else h+=list.slice(0,6).map(function(t){ return miniRow(t,fmt?fmt(t):fmtDate(dl(t)),isOverdue(t)); }).join('');
+  return h+'</div>';
+}
+function viewDashboard(){
+  var v=visible(), u=me(), t0=todayStr(), P=S.period||30, from=addDays(t0,-(P-1));
+  var open=v.filter(isOpen);
+  var overdue=open.filter(isOverdue).sort(function(a,b){ return dl(a)<dl(b)?-1:1; });
+  var dueToday=open.filter(isToday).sort(function(a,b){ return priRank(a)-priRank(b); });
+  var high=open.filter(function(t){ return t.priority==='urgent'||t.priority==='high'; }).sort(function(a,b){ return (dl(a)||'9')<(dl(b)||'9')?-1:1; });
+  var wr=open.filter(function(t){ return waitType(t)==='reply'; }), wo=open.filter(function(t){ return waitType(t)==='other'; });
+  var doneP=v.filter(function(t){ if(!isDone(t)) return false; var d=compDate(t); return d && d>=from && d<=t0; });
+  var dueP=v.filter(function(t){ var s=eff(t); if(s==='cancelled') return false; var d=dl(t); return d && d>=from && d<=t0; });
+  var dueDone=dueP.filter(isDone).length, rate=dueP.length?Math.round(dueDone/dueP.length*100):null;
+  var h=head(isMgr()?L('لوحة المتابعة الإدارية','Management dashboard'):L('لوحة المتابعة','My dashboard'),'dashboard',L('مرحبًا ','Welcome ')+u.name+' · '+fmtLong(t0),
+    '<div class="tw-tools">'+scopeTools()+'<select class="tw-sel" data-f="period" title="'+esc(L('الفترة','Period'))+'">'+[7,30,90,365].map(function(p){ return '<option value="'+p+'"'+(P===p?' selected':'')+'>'+esc(L('آخر '+p+' يوم','Last '+p+' days'))+'</option>'; }).join('')+'</select></div>');
+  h+='<div class="tw-scroll" id="tw-scroll"><div class="tw-wrap wide">';
+  var kpi=function(cls,n,l,view,extra){ return '<button class="tw-kpi '+cls+'" data-act="kpi" data-v="'+view+'"><span class="n">'+n+'</span><span class="l">'+esc(l)+'</span>'+(extra||'')+'</button>'; };
+  h+='<div class="tw-kpis">'+
+    kpi('amb',dueToday.length,L('مستحقة اليوم','Due today'),'duetoday')+
+    kpi('red',overdue.length,L('متأخرة','Overdue'),'overdue')+
+    kpi('red',high.length,L('عالية الأولوية','High priority'),'highpri')+
+    kpi('grn',doneP.length,L('مكتملة (الفترة)','Completed (period)'),'completed')+
+    kpi('amb',wr.length,L('بانتظار رد','Awaiting reply'),'waitreply')+
+    kpi('acc',wo.length,L('بانتظار طرف آخر','Awaiting others'),'waitother')+
+    '<div class="tw-kpi grn" title="'+esc(L('نسبة المهام المستحقة خلال الفترة التي أُنجزت','Share of tasks due in the period that were completed'))+'"><span class="n">'+(rate==null?'—':rate+'%')+'</span><span class="l">'+esc(L('نسبة الإنجاز','Completion rate'))+(rate!=null?' ('+dueDone+'/'+dueP.length+')':'')+'</span>'+(rate!=null?'<span class="bar"><b style="width:'+rate+'%"></b></span>':'')+'</div>'+
+    '</div>';
+  h+='<div class="tw-grid">';
+  h+=panel(L('المهام المتأخرة','Overdue'),'alert',overdue,'overdue',function(t){ return L('متأخرة ','Late ')+Math.abs(diffDays(dl(t),t0))+L(' يوم','d'); });
+  h+=panel(L('المستحقة اليوم','Due today'),'planned',dueToday,'duetoday',function(){ return L('اليوم','Today'); });
+  h+=panel(L('عالية الأولوية','High priority'),'star',high,'highpri');
+  h+=panel(L('بانتظار ردّ','Awaiting a reply'),'hourglass',wr,'waitreply',function(t){ return (t.waiting&&t.waiting.on)||fmtDate(dl(t)); });
+  h+=panel(L('بانتظار إجراء من طرف آخر','Awaiting action by others'),'hourglass',wo,'waitother',function(t){ return (t.waiting&&t.waiting.on)||fmtDate(dl(t)); });
+  h+=upcomingPanel(open,t0);
+  h+='</div>';
+  if(isMgr()) h+=teamPanels(v,t0,from);
+  h+='</div></div>';
+  OL.ensureUpcoming();
+  return h;
+}
+function upcomingPanel(open,t0){
+  var h='<div class="tw-panel"><h3>'+ic('calendar',17)+esc(L('المواعيد القادمة','Upcoming appointments'))+'<span class="sp"></span><a data-act="kpi" data-v="calendar">'+esc(L('التقويم','Calendar'))+'</a></h3>';
+  var end=addDays(t0,7), rows='';
+  if(OL.state==='in'){
+    var evs=OL.upcoming||[];
+    if(OL.upErr) rows+='<div class="tw-none" style="color:var(--tw-red)">'+esc(OL.upErr)+'</div>';
+    else if(OL.upLoading&&!evs.length) rows+='<div class="tw-none">'+esc(L('جارٍ التحميل…','Loading…'))+'</div>';
+    evs.slice(0,6).forEach(function(ev){ rows+='<div class="tw-mini" '+(ev.webLink?'onclick="window.open(\''+esc(ev.webLink)+'\',\'_blank\',\'noopener\')"':'')+'><span class="dot" style="background:#2563eb"></span><span class="t">'+esc(ev.subject||L('(بدون عنوان)','(No title)'))+'</span><span class="d">'+esc(fmtDate(ev.day)+(ev.allDay?'':' '+ev.time))+'</span></div>'; });
+    if(!evs.length && !OL.upLoading && !OL.upErr) rows+='<div class="tw-none">'+esc(L('لا توجد اجتماعات خلال 7 أيام','No meetings in the next 7 days'))+'</div>';
+  } else {
+    var tk=open.filter(function(t){ var d=dl(t); return d>=t0 && d<=end; }).sort(function(a,b){ return dl(a)<dl(b)?-1:1; }).slice(0,6);
+    rows+=tk.map(function(t){ return miniRow(t,fmtDate(dl(t))); }).join('')||'<div class="tw-none">'+esc(L('لا توجد مواعيد استحقاق خلال 7 أيام','Nothing due in the next 7 days'))+'</div>';
+    rows+='<div class="tw-mini" data-act="kpi" data-v="email" style="color:var(--tw-acc2);justify-content:center;font-weight:700">'+ic('mail',15)+' '+esc(L('اربط Outlook لعرض اجتماعاتك هنا','Connect Outlook to see your meetings'))+'</div>';
+  }
+  return h+rows+'</div>';
+}
+function teamPanels(v,t0,from){
+  var depts={}, emps={};
+  v.forEach(function(t){
+    var s=eff(t); if(s==='cancelled') return;
+    var d=t.department||L('بدون إدارة','—'); depts[d]=depts[d]||{o:0,l:0,c:0}; 
+    if(isOpen(t)){ depts[d].o++; if(isOverdue(t)) depts[d].l++; } else if(isDone(t)){ var cd=compDate(t); if(cd&&cd>=from&&cd<=t0) depts[d].c++; }
+    asg(t).forEach(function(id){
+      var e=emps[id]=emps[id]||{o:0,l:0,c:0}; var us=(t.perUserStatus&&t.perUserStatus[id]!==undefined)?t.perUserStatus[id]:t.status;
+      if(us==='completed'){ var pc=t.perUserCompletion&&t.perUserCompletion[id]; var cd2=(pc&&pc.date)||t.completionDate||''; if(cd2&&cd2>=from&&cd2<=t0) e.c++; }
+      else if(us==='pending'||us==='in_progress'||us==='postponed'){ e.o++; if(dl(t)&&dl(t)<t0) e.l++; }
+    });
+  });
+  var dk=Object.keys(depts).sort(function(a,b){ return (depts[b].o+depts[b].l)-(depts[a].o+depts[a].l); });
+  var ek=Object.keys(emps).sort(function(a,b){ return (emps[b].o)-(emps[a].o); }).slice(0,12);
+  var maxD=Math.max.apply(null,dk.map(function(k){ return depts[k].o; }).concat([1])), maxE=Math.max.apply(null,ek.map(function(k){ return emps[k].o; }).concat([1]));
+  var h='<div class="tw-grid" style="margin-top:14px">';
+  h+='<div class="tw-panel"><h3>'+ic('brief',17)+esc(L('حسب الإدارة / المشروع','By department / project'))+'</h3>'+(dk.length?'<table class="tw-tbl"><thead><tr><th>'+esc(L('الإدارة','Department'))+'</th><th>'+esc(L('مفتوحة','Open'))+'</th><th>'+esc(L('متأخرة','Late'))+'</th><th>'+esc(L('منجزة','Done'))+'</th></tr></thead><tbody>'+dk.map(function(k){ return '<tr data-dept="'+esc(k)+'" onclick="TW.go(\'dept:\'+this.getAttribute(\'data-dept\'))"><td>'+esc(k)+'<div class="tw-mb"><b style="width:'+Math.round(depts[k].o/maxD*100)+'%"></b></div></td><td>'+depts[k].o+'</td><td class="'+(depts[k].l?'r':'')+'">'+depts[k].l+'</td><td class="g">'+depts[k].c+'</td></tr>'; }).join('')+'</tbody></table>':'<div class="tw-none">'+esc(L('لا توجد بيانات','No data'))+'</div>')+'</div>';
+  h+='<div class="tw-panel"><h3>'+ic('users',17)+esc(L('حمل العمل حسب الموظف','Workload by employee'))+'</h3>'+(ek.length?'<table class="tw-tbl"><thead><tr><th>'+esc(L('الموظف','Employee'))+'</th><th>'+esc(L('مفتوحة','Open'))+'</th><th>'+esc(L('متأخرة','Late'))+'</th><th>'+esc(L('منجزة','Done'))+'</th></tr></thead><tbody>'+ek.map(function(k){ var x; try{ x=getUser(isNaN(+k)?k:+k); }catch(e){} return '<tr data-emp="'+esc(k)+'" onclick="TW.filterEmp(this.getAttribute(\'data-emp\'))"><td>'+esc(x?x.name:k)+'<div class="tw-mb"><b style="width:'+Math.round(emps[k].o/maxE*100)+'%"></b></div></td><td>'+emps[k].o+'</td><td class="'+(emps[k].l?'r':'')+'">'+emps[k].l+'</td><td class="g">'+emps[k].c+'</td></tr>'; }).join('')+'</tbody></table>':'<div class="tw-none">'+esc(L('لا توجد بيانات','No data'))+'</div>')+'</div>';
+  return h+'</div>';
+}
+TW.filterEmp=function(id){ S.fEmp=id; S.view='tasks'; S.sel=null; renderAll(); };
+
+/* ───────────── التقويم ───────────── */
+function calBase(){ if(S.calMonth) return S.calMonth; var d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1); }
+function addMonths(d,n){ return new Date(d.getFullYear(),d.getMonth()+n,1); }
+function calRange(){ var b=calBase(), start=new Date(b.getFullYear(),b.getMonth(),1-b.getDay()); return {start:start,end:new Date(start.getFullYear(),start.getMonth(),start.getDate()+41)}; }
+function viewCalendar(){
+  var b=calBase(), r=calRange(), t0=todayStr(), sel=S.calDay||t0;
+  var tasksBy={}; visible().forEach(function(t){ var d=dl(t); if(!d||eff(t)==='cancelled') return; (tasksBy[d]=tasksBy[d]||[]).push(t); });
+  var evBy=OL.cal.byDay||{};
+  var names=lang()==='en'?['Sun','Mon','Tue','Wed','Thu','Fri','Sat']:['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  var conn=OL.state==='in';
+  var tools='<div class="tw-tools"><button class="tw-btn sm" data-act="calprev">'+ic('chev',14).replace('<svg ','<svg style="transform:rotate('+(document.documentElement.dir==='rtl'?'-90':'90')+'deg)" ')+'</button><button class="tw-btn sm" data-act="caltoday">'+esc(L('اليوم','Today'))+'</button><button class="tw-btn sm" data-act="calnext">'+ic('chev',14).replace('<svg ','<svg style="transform:rotate('+(document.documentElement.dir==='rtl'?'90':'-90')+'deg)" ')+'</button>'+
+    (conn?'<span class="tw-sync ok"><i></i><span style="display:inline">Outlook</span></span>':'<button class="tw-btn sm" data-act="kpi" data-v="email">'+ic('mail',14)+esc(L('ربط Outlook','Connect Outlook'))+'</button>')+'</div>';
+  var h=head(fmtMonth(b),'calendar',conn?L('اجتماعات Outlook + مواعيد استحقاق المهام','Outlook events + task due dates'):L('مواعيد استحقاق المهام (اربط Outlook لإظهار الاجتماعات)','Task due dates (connect Outlook to add meetings)'),tools);
+  h+='<div class="tw-scroll" id="tw-scroll"><div class="tw-wrap wide">';
+  if(OL.cal.err) h+='<div class="tw-err">'+esc(OL.cal.err)+'</div>';
+  h+='<div class="tw-cal"><div class="tw-cal-h">'+names.map(function(n){ return '<div>'+esc(n)+'</div>'; }).join('')+'</div><div class="tw-cal-g">';
+  for(var i=0;i<42;i++){
+    var d=new Date(r.start.getFullYear(),r.start.getMonth(),r.start.getDate()+i), ds=ymd(d);
+    var tk=tasksBy[ds]||[], ev=evBy[ds]||[], items=[];
+    ev.forEach(function(x){ items.push('<div class="tw-ev" title="'+esc(x.subject)+'">'+(x.allDay?'':esc(x.time)+' ')+esc(x.subject||'')+'</div>'); });
+    tk.forEach(function(x){ items.push('<div class="tw-ev tk'+(isOverdue(x)?' od':'')+(isDone(x)?' dnn':'')+'" title="'+esc(x.title)+'">'+esc(x.title)+'</div>'); });
+    var dots=ev.map(function(){ return '<i></i>'; }).concat(tk.map(function(x){ return '<i class="'+(isOverdue(x)?'o':'t')+'"></i>'; })).slice(0,8).join('');
+    h+='<div class="tw-cd'+(d.getMonth()!==b.getMonth()?' out':'')+(ds===t0?' today':'')+(ds===sel?' sel':'')+'" data-day="'+ds+'"><span class="dn">'+d.getDate()+'</span>'+items.slice(0,2).join('')+(items.length>2?'<span class="tw-more-n">+'+(items.length-2)+'</span>':'')+'<div class="dots">'+dots+'</div></div>';
+  }
+  h+='</div></div>';
+  /* أجندة اليوم المحدد */
+  var dayEv=evBy[sel]||[], dayTk=(tasksBy[sel]||[]);
+  h+='<div class="tw-day"><div class="tw-grp">'+esc(fmtLong(sel))+'<span class="n">'+(dayEv.length+dayTk.length)+'</span></div><div class="tw-panel">';
+  if(!dayEv.length&&!dayTk.length) h+='<div class="tw-none">'+esc(L('لا توجد مواعيد أو مهام في هذا اليوم','Nothing on this day'))+'</div>';
+  dayEv.forEach(function(x){ h+='<div class="tw-mini" '+(x.webLink?'onclick="window.open(\''+esc(x.webLink)+'\',\'_blank\',\'noopener\')"':'')+'>'+ic('calendar',16)+'<span class="t">'+esc(x.subject||'')+'</span><span class="d">'+esc(x.allDay?L('طوال اليوم','All day'):x.time+(x.endTime?'–'+x.endTime:''))+(x.location?' · '+esc(x.location):'')+'</span></div>'; });
+  dayTk.forEach(function(x){ h+=miniRow(x,staLbl(eff(x)),isOverdue(x)); });
+  h+='</div></div></div></div>';
+  return h;
+}
+
+/* ───────────── الإعدادات ───────────── */
+var SET={};
+function viewSettings(){
+  var u=me(), cfg=OL.cfg(), np=('Notification' in window)?Notification.permission:'unsupported';
+  var h=head(L('الإعدادات','Settings'),'settings',u.name+' · '+(u.role==='admin'?L('مدير النظام','Administrator'):u.role==='manager'?L('مدير','Manager'):L('موظف','Employee')),'');
+  h+='<div class="tw-scroll" id="tw-scroll"><div class="tw-wrap"><div class="tw-set">';
+  h+='<div class="tw-panel"><h3>'+ic('globe',17)+esc(L('المظهر واللغة','Appearance & language'))+'</h3>'+
+    '<div class="row"><div class="k"><b>'+esc(L('الوضع الفاتح / الداكن','Light / dark mode'))+'</b></div><button class="tw-btn" data-act="theme">'+ic('moon',16)+esc(L('تبديل','Toggle'))+'</button></div>'+
+    '<div class="row"><div class="k"><b>'+esc(L('اللغة والاتجاه','Language & direction'))+'</b><span>'+esc(L('العربية (RTL) / English (LTR)','Arabic (RTL) / English (LTR)'))+'</span></div><button class="tw-btn" data-act="lang">'+ic('globe',16)+esc(L('English','العربية'))+'</button></div></div>';
+  h+='<div class="tw-panel"><h3>'+ic('dashboard',17)+esc(L('مساحة العمل','Workspace'))+'</h3>'+
+    '<div class="row"><div class="k"><b>'+esc(L('فتح مساحة المهام بعد تسجيل الدخول','Open the workspace after sign-in'))+'</b><span>'+esc(L('عند الإيقاف تفتح اللوحات الكلاسيكية مباشرة. يمكنك دائمًا الرجوع من قسم "الأقسام الإدارية".','When off, the classic dashboards open directly.'))+'</span></div><label><input type="checkbox" data-act="setlanding"'+(S.landing?' checked':'')+'> </label></div></div>';
+  h+='<div class="tw-panel"><h3>'+ic('bell',17)+esc(L('التذكيرات والإشعارات','Reminders & notifications'))+'</h3>'+
+    '<div class="row"><div class="k"><b>'+esc(L('إشعارات المتصفح للتذكيرات','Browser notifications for reminders'))+'</b><span>'+esc(np==='granted'?L('مفعّلة','Enabled'):np==='denied'?L('محظورة من إعدادات المتصفح','Blocked in browser settings'):np==='unsupported'?L('غير مدعومة في هذا المتصفح','Not supported'):L('غير مفعّلة','Not enabled'))+' — '+esc(L('تظهر التذكيرات داخل المنصة دائمًا أثناء فتحها','in-app reminders always show while the app is open'))+'</span></div>'+(np==='default'?'<button class="tw-btn pri" data-act="notifperm">'+esc(L('تفعيل','Enable'))+'</button>':'')+(np==='granted'?'<button class="tw-btn" data-act="notiftest">'+esc(L('اختبار','Test'))+'</button>':'')+'</div></div>';
+  h+=OL.settingsHtml(cfg);
+  h+='<div class="tw-panel"><h3>'+ic('download',17)+esc(L('البيانات والنظام','Data & system'))+'</h3>'+
+    '<div class="row"><div class="k"><b>'+esc(L('تصدير المهام الظاهرة (CSV)','Export visible tasks (CSV)'))+'</b></div><button class="tw-btn" data-act="exportcsv">'+ic('download',16)+esc(L('تصدير','Export'))+'</button></div>'+
+    '<div class="row"><div class="k"><b>'+esc(L('الإعدادات المتقدمة للنظام','Advanced system settings'))+'</b><span>'+esc(L('البريد، واتساب، تيليجرام، الطباعة…','Email, WhatsApp, Telegram, print…'))+'</span></div><button class="tw-btn" data-act="legacyset">'+ic('settings',16)+esc(L('فتح','Open'))+'</button></div>'+
+    (u.role==='admin'?'<div class="row"><div class="k"><b>'+esc(L('إدارة المستخدمين','User management'))+'</b></div><button class="tw-btn" data-act="usermgmt">'+ic('users',16)+esc(L('فتح','Open'))+'</button></div>':'')+
+    '</div></div></div></div>';
+  return h;
+}
+SET.act=function(act,a){
+  switch(act){
+    case 'setlanding': S.landing=!!a.checked; saveUi(); toast(S.landing?L('سيفتح التطبيق على مساحة المهام','Workspace is now the landing page'):L('سيفتح التطبيق على اللوحات الكلاسيكية','Classic dashboards are now the landing page')); return true;
+    case 'notifperm': try{ Notification.requestPermission().then(function(){ renderMain(true); }); }catch(e){} return true;
+    case 'notiftest': try{ new Notification(L('مهام المستودعات','Warehouse Tasks'),{body:L('هكذا ستظهر التذكيرات.','This is how reminders will look.')}); }catch(e){} return true;
+    case 'exportcsv': exportCsv(); return true;
+    case 'legacyset': try{ openModal('ov-settings'); }catch(e){} return true;
+    case 'usermgmt': try{ openUserManagement(); }catch(e){ try{ openUserManagementModal(); }catch(x){} } return true;
+  }
+  return false;
+};
+function exportCsv(){
+  var rows=[['#','العنوان / Title','الإدارة / Department','الأولوية / Priority','الحالة / Status','المكلفون / Assignees','الاستحقاق / Due','تاريخ الإكمال / Completed','أُنشئت / Created']];
+  applyFilters(visible()).forEach(function(t){ rows.push([t.serial||'',t.title,t.department||'',priLbl(t.priority),staLbl(eff(t)),asg(t).map(userName).join(' | '),dl(t),compDate(t),t.createdAt||'']); });
+  var csv='﻿'+rows.map(function(r){ return r.map(function(c){ c=String(c==null?'':c); return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }).join(','); }).join('\r\n');
+  var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='tasks-'+todayStr()+'.csv'; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },500);
+}
+
+/* ───────────── تكامل Outlook (Microsoft Graph + MSAL) ───────────── */
+var OL = TW.OL = {
+  state:'off', app:null, acct:null, booted:false,
+  scopes:['User.Read','Mail.Read','Calendars.Read'],
+  mail:{items:[],next:null,loading:false,q:'',sel:null,err:'',loaded:false,unread:null,body:{}},
+  cal:{byDay:{},err:'',key:'',loading:false}, upcoming:null, upLoading:false, upErr:'', upAt:0
+};
+OL.cfg=function(){ var c=lsGet('tw_ms',{})||{}; return {clientId:String(c.clientId||WH_DEFAULT_MS.clientId||'').trim(), tenant:String(c.tenant||WH_DEFAULT_MS.tenant||'common').trim()||'common'}; };
+OL.base=function(){ return location.origin+location.pathname.replace(/[^\/]*$/,''); };
+OL.redirect=function(){ return OL.base(); };
+OL.refreshState=function(){ var c=OL.cfg(); if(!c.clientId) OL.state='off'; else if(OL.state==='off') OL.state='out'; };
+function loadMsal(){
+  if(window.msal && msal.PublicClientApplication) return Promise.resolve();
+  var urls=['https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js','https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js'];
+  return new Promise(function(res,rej){
+    (function next(i){
+      if(i>=urls.length) return rej(new Error(L('تعذّر تحميل مكتبة تسجيل الدخول من Microsoft. تحقق من الاتصال بالإنترنت.','Could not load the Microsoft sign-in library. Check your connection.')));
+      var s=document.createElement('script'); s.src=urls[i]; s.async=true;
+      s.onload=function(){ (window.msal&&msal.PublicClientApplication)?res():next(i+1); };
+      s.onerror=function(){ s.remove(); next(i+1); };
+      document.head.appendChild(s);
+    })(0);
+  });
+}
+OL.init=async function(){
+  if(OL.app) return OL.app;
+  var c=OL.cfg(); if(!c.clientId) throw new Error(L('لم يُحدَّد Client ID بعد.','No Client ID configured.'));
+  await loadMsal();
+  var app=new msal.PublicClientApplication({auth:{clientId:c.clientId,authority:'https://login.microsoftonline.com/'+encodeURIComponent(c.tenant),redirectUri:OL.redirect(),postLogoutRedirectUri:OL.base()},cache:{cacheLocation:'localStorage'}});
+  if(typeof app.initialize==='function') await app.initialize();
+  OL.app=app; return app;
+};
+OL.errMsg=function(e){
+  var code=(e&&(e.errorCode||e.code))||'', m=(e&&e.message)||String(e||'');
+  if(/popup_window_error|empty_window_error/.test(code)) return L('حجب المتصفح النافذة المنبثقة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.','The browser blocked the sign-in popup. Allow popups for this site and retry.');
+  if(/user_cancelled|interaction_in_progress/.test(code)) return L('أُلغيت عملية تسجيل الدخول.','Sign-in was cancelled.');
+  if(/AADSTS50011/.test(m)) return L('عنوان إعادة التوجيه غير مسجّل في Azure. أضِف العنوان الظاهر في الإعدادات كمنصة SPA.','Redirect URI is not registered in Azure. Add the URI shown in Settings as an SPA redirect.');
+  if(/AADSTS700016|AADSTS90002|AADSTS900023/.test(m)) return L('Client ID أو المستأجر (Tenant) غير صحيح.','Invalid Client ID or tenant.');
+  if(/AADSTS65001|AADSTS90094|consent/i.test(m)) return L('يلزم منح الموافقة على الصلاحيات (Admin consent) من مدير Microsoft 365.','Permissions need consent from a Microsoft 365 admin.');
+  if(e&&(e.status===401||e.status===403)) return L('لا تملك صلاحية الوصول إلى هذه البيانات في Outlook.','No permission to access this Outlook data.');
+  if(e&&e.status===429) return L('طلبات كثيرة إلى Microsoft، حاول بعد قليل.','Too many requests to Microsoft; try again shortly.');
+  return m;
+};
+OL.signIn=async function(){
+  try{
+    OL.state='busy'; renderMain(true);
+    var app=await OL.init();
+    var r=await app.loginPopup({scopes:OL.scopes,prompt:'select_account'});
+    OL.acct=r.account; app.setActiveAccount(r.account); OL.state='in'; lsSet('tw_ms_on',1); OL.err='';
+    toast(L('✅ تم ربط Outlook','✅ Outlook connected'));
+    OL.mail.loaded=false; OL.upAt=0; OL.cal.key='';
+    renderSide(); OL.afterConnect();
+  }catch(e){ OL.state=OL.cfg().clientId?'out':'off'; OL.err=OL.errMsg(e); console.warn('[TW][OL]',e); toast('❌ '+OL.err,'err'); renderMain(true); }
+};
+OL.signOut=function(){
+  try{ if(OL.app){ OL.app.setActiveAccount(null); } }catch(e){}
+  try{ Object.keys(localStorage).filter(function(k){ return /^msal\./i.test(k)||/login\.windows\.net|login\.microsoftonline/i.test(k); }).forEach(function(k){ localStorage.removeItem(k); }); }catch(e){}
+  lsSet('tw_ms_on',0); OL.acct=null; OL.app=null; OL.state=OL.cfg().clientId?'out':'off';
+  OL.mail={items:[],next:null,loading:false,q:'',sel:null,err:'',loaded:false,unread:null,body:{}}; OL.cal={byDay:{},err:'',key:'',loading:false}; OL.upcoming=null; OL.upAt=0;
+  toast(L('تم فصل Outlook','Outlook disconnected')); renderAll();
+};
+OL.boot=function(){
+  if(OL.booted) return; OL.booted=true; OL.refreshState();
+  if(!OL.cfg().clientId || !lsGet('tw_ms_on',0)) return;
+  OL.init().then(function(app){
+    var a=app.getActiveAccount()||app.getAllAccounts()[0];
+    if(a){ OL.acct=a; app.setActiveAccount(a); OL.state='in'; renderSide(); OL.afterConnect(); } else { OL.state='out'; }
+  }).catch(function(e){ console.warn('[TW][OL] boot',e); OL.state='out'; });
+};
+OL.afterConnect=function(){
+  OL.refreshUnread();
+  if(S.view==='email') OL.ensureMail(); if(S.view==='calendar') OL.ensureCal(); if(S.view==='dashboard') OL.ensureUpcoming(); renderMain(true);
+};
+OL.token=async function(){
+  var app=await OL.init(); var acct=OL.acct||app.getActiveAccount()||app.getAllAccounts()[0];
+  if(!acct) throw new Error(L('غير مسجّل الدخول إلى Outlook.','Not signed in to Outlook.'));
+  try{ var r=await app.acquireTokenSilent({scopes:OL.scopes,account:acct}); return r.accessToken; }
+  catch(e){ var r2=await app.acquireTokenPopup({scopes:OL.scopes,account:acct}); return r2.accessToken; }
+};
+OL.g=async function(path,headers){
+  var tok=await OL.token(); var url=path.indexOf('http')===0?path:'https://graph.microsoft.com/v1.0'+path;
+  var res=await fetch(url,{headers:Object.assign({Authorization:'Bearer '+tok},headers||{})});
+  if(!res.ok){ var msg=''; try{ var j=await res.json(); msg=j.error&&j.error.message; }catch(x){} var er=new Error(msg||('HTTP '+res.status)); er.status=res.status; throw er; }
+  return res.json();
+};
+var MSEL='id,subject,from,receivedDateTime,isRead,bodyPreview,webLink,hasAttachments,flag,internetMessageId';
+OL.refreshUnread=function(){ if(OL.state!=='in') return; OL.g('/me/mailFolders/inbox?$select=unreadItemCount').then(function(j){ OL.mail.unread=j.unreadItemCount; renderSide(); }).catch(function(){}); };
+OL.ensureMail=function(){ if(OL.state==='in' && !OL.mail.loaded && !OL.mail.loading) OL.loadMail(true); };
+OL.loadMail=async function(reset){
+  if(OL.state!=='in') return; var m=OL.mail; if(m.loading) return;
+  m.loading=true; m.err=''; if(reset){ m.items=[]; m.next=null; } if(S.view==='email') renderMain(true);
+  try{
+    var url;
+    if(!reset && m.next) url=m.next;
+    else if(m.q && m.q.trim()) url='/me/messages?$search="'+encodeURIComponent(m.q.replace(/["\\]/g,' ').trim())+'"&$top=25&$select='+MSEL;
+    else url='/me/mailFolders/inbox/messages?$top=30&$orderby=receivedDateTime desc&$select='+MSEL;
+    var j=await OL.g(url); m.items=m.items.concat(j.value||[]); m.next=j['@odata.nextLink']||null; m.loaded=true;
+  }catch(e){ m.err=OL.errMsg(e); }
+  m.loading=false; if(S.view==='email') renderMain(true);
+};
+function emailIndex(){ var by={}; try{ (DB.tasks||[]).forEach(function(t){ if(t.emailRef){ [t.emailRef.id,t.emailRef.imid].forEach(function(k){ if(k){ (by[k]=by[k]||[]); if(by[k].indexOf(t)<0) by[k].push(t); } }); } }); }catch(e){} return by; }
+function linkedTasks(m,idx){ idx=idx||emailIndex(); var a=(idx[m.id]||[]).slice(); (idx[m.internetMessageId]||[]).forEach(function(t){ if(a.indexOf(t)<0) a.push(t); }); return a; }
+function mailFrom(m){ var f=m.from&&m.from.emailAddress; return f?{name:f.name||f.address||'',addr:f.address||''}:{name:'',addr:''}; }
+function fmtMailDate(iso){ if(!iso) return ''; var d=new Date(iso), ds=ymd(d); return ds===todayStr()?fmtTime(iso):fmtDate(ds); }
+function viewEmail(){
+  var h=head(L('البريد الإلكتروني','Email'),'mail',OL.state==='in'&&OL.acct?(OL.acct.username||''):L('Outlook / Microsoft 365','Outlook / Microsoft 365'),
+    OL.state==='in'?'<div class="tw-tools"><select class="tw-sel" data-f="mailfilter"><option value="all"'+(S.mailFilter==='all'?' selected':'')+'>'+esc(L('الكل','All'))+'</option><option value="unread"'+(S.mailFilter==='unread'?' selected':'')+'>'+esc(L('غير المقروءة','Unread'))+'</option><option value="flagged"'+(S.mailFilter==='flagged'?' selected':'')+'>'+esc(L('ذات علم','Flagged'))+'</option><option value="notask"'+(S.mailFilter==='notask'?' selected':'')+'>'+esc(L('بدون مهمة','Without task'))+'</option></select><button class="tw-btn sm" data-act="mailrefresh">'+ic('refresh',14)+esc(L('تحديث','Refresh'))+'</button></div>':'');
+  h+='<div class="tw-scroll" id="tw-scroll"><div class="tw-wrap">';
+  if(OL.state==='off') h+=setupCard();
+  else if(OL.state==='out'||OL.state==='busy') h+='<div class="tw-setup"><h2>'+ic('mail',22)+' '+esc(L('تسجيل الدخول إلى Outlook','Sign in to Outlook'))+'</h2><p>'+esc(L('اربط بريدك وتقويمك في Microsoft 365 لعرض الرسائل وتحويلها إلى مهام، وعرض اجتماعاتك داخل المنصة. الصلاحيات للقراءة فقط.','Connect your Microsoft 365 mail and calendar to read messages, turn them into tasks, and see meetings here. Permissions are read-only.'))+'</p>'+(OL.err?'<div class="tw-err">'+esc(OL.err)+'</div>':'')+'<button class="tw-btn pri" data-act="msconnect"'+(OL.state==='busy'?' disabled':'')+'>'+ic('user',16)+esc(OL.state==='busy'?L('جارٍ الاتصال…','Connecting…'):L('تسجيل الدخول بحساب Microsoft','Sign in with Microsoft'))+'</button></div>';
+  else {
+    var m=OL.mail;
+    if(m.err) h+='<div class="tw-err">'+esc(m.err)+' <button class="tw-btn sm" data-act="mailrefresh">'+esc(L('إعادة المحاولة','Retry'))+'</button></div>';
+    var eidx=emailIndex(); var items=m.items.filter(function(x){ if(S.mailFilter==='unread') return !x.isRead; if(S.mailFilter==='flagged') return x.flag&&x.flag.flagStatus==='flagged'; if(S.mailFilter==='notask') return !linkedTasks(x,eidx).length; return true; });
+    if(m.q) h+='<div class="tw-hint" style="margin:6px 0">'+esc(L('نتائج البحث عن: ','Search results for: '))+esc(m.q)+'</div>';
+    if(!items.length && !m.loading && !m.err) h+='<div class="tw-empty">'+ic('inbox',54)+'<b>'+esc(L('لا توجد رسائل','No messages'))+'</b></div>';
+    h+='<div class="tw-rows">'+items.map(function(x){
+      var f=mailFrom(x), lt=linkedTasks(x,eidx);
+      return '<div class="tw-mrow'+(x.isRead?'':' unread')+(OL.mail.sel===x.id?' on':'')+'" data-mid="'+esc(x.id)+'"><div style="flex:1;min-width:0"><div style="display:flex;gap:8px;align-items:baseline"><span class="f" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(f.name||f.addr)+'</span><span class="dt">'+esc(fmtMailDate(x.receivedDateTime))+'</span></div><div class="s" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(x.subject||L('(بدون موضوع)','(No subject)'))+'</div><div class="p">'+esc(x.bodyPreview||'')+'</div></div><div style="display:flex;flex-direction:column;gap:4px;align-items:center">'+(x.flag&&x.flag.flagStatus==='flagged'?'<span style="color:#dc2626" title="flag">⚑</span>':'')+(x.hasAttachments?'<span style="color:var(--tw-tx3)">'+ic('clip',14)+'</span>':'')+(lt.length?'<span class="acc" style="color:var(--tw-acc2)" title="'+esc(L('مرتبطة بمهمة','Linked to a task'))+'">'+ic('mailtask',16)+'</span>':'')+'</div></div>';
+    }).join('')+'</div>';
+    if(m.loading) h+='<div class="tw-none">'+esc(L('جارٍ التحميل…','Loading…'))+'</div>';
+    if(m.next && !m.loading) h+='<button class="tw-btn tw-more" data-act="mailmore">'+esc(L('تحميل المزيد','Load more'))+'</button>';
+  }
+  return h+'</div></div>';
+}
+function setupCard(){
+  var cfg=OL.cfg();
+  return '<div class="tw-setup"><h2>'+ic('mail',22)+' '+esc(L('ربط Outlook / Microsoft 365','Connect Outlook / Microsoft 365'))+'</h2><p>'+esc(L('يحتاج الربط إلى تسجيل التطبيق مرة واحدة في Microsoft Entra ID ثم لصق معرّف التطبيق هنا. لا تُحفظ أي كلمات مرور — يتم تسجيل الدخول عبر نافذة Microsoft الرسمية.','Linking needs a one-time app registration in Microsoft Entra ID, then paste the app ID here. No passwords are stored — sign-in uses the official Microsoft window.'))+'</p><ol>'+
+   '<li>'+esc(L('افتح ','Open '))+'<code>entra.microsoft.com</code> → App registrations → New registration</li>'+
+   '<li>'+esc(L('اختر نوع الحسابات (حسابات هذه المؤسسة فقط، أو أي مؤسسة).','Choose supported account types (your org only, or any org).'))+'</li>'+
+   '<li>Redirect URI → '+esc(L('المنصة: ','Platform: '))+'<b>Single-page application (SPA)</b> → <code>'+esc(OL.redirect())+'</code></li>'+
+   '<li>API permissions → Microsoft Graph → Delegated: <code>User.Read</code> <code>Mail.Read</code> <code>Calendars.Read</code> '+esc(L('(ثم Grant admin consent إن طُلب)','(then Grant admin consent if required)'))+'</li>'+
+   '<li>'+esc(L('انسخ Application (client) ID والصقه أدناه.','Copy the Application (client) ID and paste it below.'))+'</li></ol>'+msFields(cfg)+
+   '<button class="tw-btn pri" data-act="mssave">'+esc(L('حفظ والمتابعة','Save & continue'))+'</button></div>';
+}
+function msFields(cfg){
+  return '<div class="tw-fld"><label>Application (client) ID</label><input type="text" id="tw-ms-cid" value="'+esc(cfg.clientId)+'" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" spellcheck="false"></div>'+
+   '<div class="tw-fld"><label>'+esc(L('المستأجر (Tenant): common أو organizations أو معرّف/نطاق مؤسستك','Tenant: common, organizations, or your tenant ID/domain'))+'</label><input type="text" id="tw-ms-tenant" value="'+esc(cfg.tenant)+'" spellcheck="false"></div>';
+}
+OL.settingsHtml=function(cfg){
+  var st=OL.state;
+  var h='<div class="tw-panel"><h3>'+ic('mail',17)+'Outlook / Microsoft 365</h3>';
+  h+='<div class="row"><div class="k"><b>'+esc(L('الحالة','Status'))+'</b><span>'+esc(st==='in'?L('متصل: ','Connected: ')+(OL.acct?OL.acct.username:''):st==='off'?L('غير مُعدّ — أدخل Client ID','Not configured — enter a Client ID'):L('مُعدّ — غير مسجّل الدخول','Configured — signed out'))+'</span></div>'+(st==='in'?'<button class="tw-btn dng" data-act="msdisconnect">'+esc(L('فصل','Disconnect'))+'</button>':(st==='out'?'<button class="tw-btn pri" data-act="msconnect">'+esc(L('تسجيل الدخول','Sign in'))+'</button>':''))+'</div>';
+  h+='<div class="row" style="display:block">'+msFields(cfg)+'<div class="k" style="margin-top:8px"><b>Redirect URI (SPA)</b><br><span class="tw-code">'+esc(OL.redirect())+'</span> <button class="tw-btn sm" data-act="mscopy">'+esc(L('نسخ','Copy'))+'</button></div><div style="margin-top:10px"><button class="tw-btn" data-act="mssave">'+esc(L('حفظ الإعدادات','Save settings'))+'</button></div></div></div>';
+  return h;
+};
+OL.selectMail=function(id){
+  OL.mail.sel=id; S.sel=null; renderMain(true); renderDetail();
+  var m=OL.mail.items.find(function(x){ return x.id===id; });
+  if(m && !OL.mail.body[id]){
+    OL.g('/me/messages/'+encodeURIComponent(id)+'?$select=body,toRecipients,ccRecipients',{Prefer:'outlook.body-content-type="text"'}).then(function(j){ OL.mail.body[id]=j; if(OL.mail.sel===id) renderDetail(); }).catch(function(e){ OL.mail.body[id]={err:OL.errMsg(e)}; if(OL.mail.sel===id) renderDetail(); });
+  }
+};
+OL.detailHtml=function(){
+  var m=OL.mail.items.find(function(x){ return x.id===OL.mail.sel; });
+  if(!m) return '';
+  var f=mailFrom(m), b=OL.mail.body[m.id], lt=linkedTasks(m);
+  var to=b&&b.toRecipients?b.toRecipients.map(function(r){ return r.emailAddress.name||r.emailAddress.address; }).join('، '):'';
+  var h='<div class="tw-d-top"><button class="tw-ibtn" data-act="closed">'+ic('x',19)+'</button><span class="sp"></span>'+(m.webLink?'<a class="tw-btn sm" target="_blank" rel="noopener" href="'+esc(m.webLink)+'">'+ic('ext',14)+esc(L('فتح / رد في Outlook','Open / reply in Outlook'))+'</a>':'')+'</div><div class="tw-d-body">';
+  h+='<div style="font-size:16.5px;font-weight:800;line-height:1.5">'+esc(m.subject||L('(بدون موضوع)','(No subject)'))+'</div>';
+  h+='<div class="tw-hint" style="margin:0"><b>'+esc(f.name)+'</b> &lt;'+esc(f.addr)+'&gt;<br>'+esc(m.receivedDateTime?new Date(m.receivedDateTime).toLocaleString(loc()):'')+(to?'<br>'+esc(L('إلى: ','To: '))+esc(to):'')+'</div>';
+  h+='<div class="tw-card"><div class="tw-mbody">'+(b&&b.body?esc(b.body.content||''):b&&b.err?'<span style="color:var(--tw-red)">'+esc(b.err)+'</span>':esc(m.bodyPreview||'')+'\n\n'+esc(L('…جارٍ تحميل النص الكامل','…loading full text')))+'</div></div>';
+  if(lt.length){ h+='<div class="tw-lbl">'+esc(L('المهام المرتبطة','LINKED TASKS'))+'</div><div class="tw-card">'+lt.map(function(t){ return '<div class="tw-mini" data-id="'+esc(t.id)+'"><span class="t">'+esc(t.title)+'</span><span class="d">'+esc(staLbl(eff(t)))+'</span></div>'; }).join('')+'</div>'; }
+  h+='<div class="tw-lbl">'+esc(L('تحويل إلى مهمة','CONVERT TO TASK'))+'</div><div class="tw-card"><div class="tw-line"><span class="v" style="justify-content:stretch"><input type="text" id="tw-m-title" value="'+esc(m.subject||'')+'" maxlength="200" style="width:100%;border-color:var(--tw-line)"></span></div>'+
+    '<div class="tw-line"><span class="k">'+esc(L('الاستحقاق','Due'))+'</span><span class="v"><input type="date" id="tw-m-due" value="'+addDays(todayStr(),1)+'"></span></div>'+
+    '<div class="tw-line"><span class="k">'+esc(L('الأولوية','Priority'))+'</span><span class="v"><select id="tw-m-pri"><option value="medium">'+esc(priLbl('medium'))+'</option><option value="high"'+(m.flag&&m.flag.flagStatus==='flagged'?' selected':'')+'>'+esc(priLbl('high'))+'</option><option value="urgent">'+esc(priLbl('urgent'))+'</option><option value="low">'+esc(priLbl('low'))+'</option></select></span></div>'+
+    '<label class="tw-line" style="cursor:pointer"><input type="checkbox" id="tw-m-wait"> <span>'+esc(L('بانتظار ردّ من المرسل','Awaiting a reply from the sender'))+'</span></label>'+
+    '<label class="tw-line" style="cursor:pointer"><input type="checkbox" id="tw-m-day"> <span>'+esc(L('إضافتها إلى يومي','Add to My Day'))+'</span></label></div>'+
+    '<button class="tw-btn pri" data-act="mailtask">'+ic('mailtask',16)+esc(L('إنشاء مهمة من هذه الرسالة','Create task from this email'))+'</button>';
+  return h+'</div>';
+};
+OL.createTaskFromMail=function(){
+  var m=OL.mail.items.find(function(x){ return x.id===OL.mail.sel; }); if(!m) return;
+  var title=($id('tw-m-title').value||'').trim(); if(!title){ toast(L('أدخل عنوان المهمة','Enter a title'),'err'); return; }
+  var f=mailFrom(m), body=OL.mail.body[m.id]&&OL.mail.body[m.id].body?OL.mail.body[m.id].body.content:(m.bodyPreview||'');
+  var wait=$id('tw-m-wait').checked;
+  var t=createTask({title:title,deadline:$id('tw-m-due').value||todayStr(),priority:$id('tw-m-pri').value,myDay:$id('tw-m-day').checked,
+    description:String(body||'').replace(/\r/g,'').trim().slice(0,1500),
+    emailRef:{id:m.id,imid:m.internetMessageId||'',subject:m.subject||'',from:f.addr,fromName:f.name,webLink:m.webLink||'',received:m.receivedDateTime||''},
+    waiting:wait?{type:'reply',on:f.name||f.addr,since:todayStr()}:null});
+  if(t){ toast(L('✅ تم إنشاء المهمة من الرسالة','✅ Task created from email')); OL.mail.sel=null; S.sel=t.id; renderAll(); }
+};
+/* التقويم */
+OL.ensureCal=function(){
+  if(OL.state!=='in') return; var r=calRange(), key=ymd(r.start)+'_'+ymd(r.end); if(OL.cal.key===key||OL.cal.loading) return;
+  OL.cal.loading=true; OL.cal.err='';
+  OL.events(ymd(r.start),ymd(addDaysD(r.end,1))).then(function(evs){ OL.cal.byDay=groupEvents(evs); OL.cal.key=key; }).catch(function(e){ OL.cal.err=OL.errMsg(e); }).then(function(){ OL.cal.loading=false; if(S.view==='calendar') renderMain(true); });
+};
+function addDaysD(d,n){ return new Date(d.getFullYear(),d.getMonth(),d.getDate()+n); }
+function localIso(ds){ var d=parseYmd(ds); return d.toISOString(); }
+OL.events=async function(fromDs,toDs){
+  var tz=''; try{ tz=Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(e){}
+  var out=[], url='/me/calendarView?startDateTime='+encodeURIComponent(localIso(fromDs))+'&endDateTime='+encodeURIComponent(localIso(toDs))+'&$top=250&$orderby=start/dateTime&$select=id,subject,start,end,isAllDay,location,webLink,isCancelled';
+  for(var i=0;i<4 && url;i++){ var j=await OL.g(url,tz?{Prefer:'outlook.timezone="'+tz+'"'}:{}); out=out.concat(j.value||[]); url=j['@odata.nextLink']||null; }
+  return out.filter(function(e){ return !e.isCancelled; });
+};
+function groupEvents(evs){
+  var by={};
+  evs.forEach(function(e){
+    var s=String(e.start.dateTime||'').slice(0,10), en=String(e.end.dateTime||'').slice(0,10), last=en;
+    if(e.isAllDay || (/T00:00:00/.test(e.end.dateTime||'') && en>s)) last=addDays(en,-1);
+    if(last<s) last=s;
+    var d=s, n=0;
+    while(d<=last && n<31){ (by[d]=by[d]||[]).push({subject:e.subject,time:d===s?String(e.start.dateTime).slice(11,16):'',endTime:String(e.end.dateTime||'').slice(11,16),allDay:!!e.isAllDay||d!==s,location:e.location&&e.location.displayName||'',webLink:e.webLink,day:d}); d=addDays(d,1); n++; }
+  });
+  return by;
+}
+OL.ensureUpcoming=function(){
+  if(OL.state!=='in'||OL.upLoading||Date.now()-OL.upAt<300000) return;
+  OL.upLoading=true; OL.upErr=''; var t0=todayStr();
+  OL.events(t0,addDays(t0,8)).then(function(evs){ var by=groupEvents(evs), out=[]; Object.keys(by).sort().forEach(function(d){ if(d>=t0&&d<=addDays(t0,7)) by[d].forEach(function(x){ out.push(x); }); }); OL.upcoming=out; OL.upAt=Date.now(); })
+   .catch(function(e){ OL.upErr=OL.errMsg(e); }).then(function(){ OL.upLoading=false; if(S.view==='dashboard') renderMain(true); });
+};
+OL.act=function(act,a){
+  switch(act){
+    case 'mssave': var cid=($id('tw-ms-cid')||{}).value||'', tn=($id('tw-ms-tenant')||{}).value||'common';
+      cid=cid.trim(); if(cid && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cid)){ toast(L('صيغة Client ID غير صحيحة (GUID)','Client ID must be a GUID'),'err'); return true; }
+      lsSet('tw_ms',{clientId:cid,tenant:tn.trim()||'common'}); OL.app=null; OL.acct=null; OL.state=cid?'out':'off'; lsSet('tw_ms_on',0);
+      toast(L('✅ تم حفظ إعدادات Outlook','✅ Outlook settings saved')); renderAll(); return true;
+    case 'msconnect': OL.signIn(); return true;
+    case 'msdisconnect': OL.signOut(); return true;
+    case 'mscopy': try{ navigator.clipboard.writeText(OL.redirect()); toast(L('تم النسخ','Copied')); }catch(e){} return true;
+    case 'mailrefresh': OL.mail.loaded=false; OL.loadMail(true); OL.refreshUnread(); return true;
+    case 'mailmore': OL.loadMail(false); return true;
+    case 'mailtask': OL.createTaskFromMail(); return true;
+  }
+  return false;
+};
+
+/* ───────────── التذكيرات والمؤقتات ───────────── */
+var fired=lsGet('tw_fired',{})||{};
+function clearFired(id){ delete fired[id]; lsSet('tw_fired',fired); }
+function checkReminders(){
+  var u=me(); if(!u) return;
+  var now=Date.now(), hit=0;
+  try{
+    (DB.tasks||[]).forEach(function(t){
+      var r=t.reminderBy&&t.reminderBy[u.id]; if(!r||!mine(t)&&!isMgr()) return;
+      if(!isOpen(t)) return;
+      var ts=new Date(r).getTime(); if(isNaN(ts)||ts>now||fired[t.id]===r) return;
+      fired[t.id]=r; hit++;
+      toast('🔔 '+L('تذكير: ','Reminder: ')+t.title);
+      try{ if('Notification' in window && Notification.permission==='granted'){ var n=new Notification(L('تذكير بمهمة','Task reminder'),{body:t.title,tag:'tw-'+t.id}); n.onclick=function(){ window.focus(); TW.open(); S.sel=t.id; renderAll(); n.close(); }; } }catch(e){}
+    });
+  }catch(e){}
+  if(hit){ lsSet('tw_fired',fired); if(isOpenNow()) refreshLight(); }
+}
+var _timers=false, _lastDay=todayStr();
+function startTimers(){
+  if(_timers) return; _timers=true;
+  setInterval(checkReminders,30000); setTimeout(checkReminders,2500);
+  setInterval(function(){
+    if(todayStr()!==_lastDay){ _lastDay=todayStr(); if(isOpenNow()) renderAll(); }
+    if(OL.state==='in' && isOpenNow()) OL.refreshUnread();
+  },180000);
+  window.addEventListener('online',syncBadge); window.addEventListener('offline',syncBadge);
+  document.addEventListener('keydown',function(e){
+    if(!isOpenNow()) return; var tg=e.target, typing=tg&&/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName);
+    if(typing||e.ctrlKey||e.metaKey||e.altKey) return;
+    if(e.key==='/'){ e.preventDefault(); var q=$id('tw-q'); if(q) q.focus(); }
+    else if(e.key==='n'||e.key==='N'||e.key==='ي'){ var a=$id('tw-add-q'); if(a){ e.preventDefault(); a.focus(); } }
+  });
+}
+
+/* ───────────── الربط مع النظام الحالي ───────────── */
+function safeWrap(name,fn){ try{ var orig=window[name]; if(typeof orig!=='function'||orig.__tw) return; var w=fn(orig); w.__tw=true; window[name]=w; }catch(e){ console.warn('[TW] wrap '+name,e); } }
+function landingOn(){ return !TW.disabled && S.landing!==false; }
+function install(){
+  var css=document.createElement('style'); css.id='wh-workspace-css'; css.textContent="#pg-todo{--tw-bg:#f3f6fa;--tw-surface:#fff;--tw-side:#f7f9fc;--tw-line:rgba(15,23,42,.1);--tw-line2:rgba(15,23,42,.06);--tw-tx:#1e293b;--tw-tx2:#53627a;--tw-tx3:#8493a8;--tw-acc:var(--blue,#3b82f6);--tw-acc2:#2563eb;--tw-soft:rgba(59,130,246,.1);--tw-hov:rgba(15,23,42,.045);--tw-sel:rgba(59,130,246,.13);--tw-red:#dc2626;--tw-amb:#d97706;--tw-grn:#059669;--tw-sh:0 8px 30px rgba(15,23,42,.14);\n  display:none;position:fixed;inset:0;z-index:60;background:var(--tw-bg);color:var(--tw-tx);font-family:var(--font-body,'Cairo','Tajawal',sans-serif);font-size:14.5px;line-height:1.5;flex-direction:column;-webkit-font-smoothing:antialiased}\nhtml.dark #pg-todo{--tw-bg:#0e1626;--tw-surface:#172033;--tw-side:#121b2c;--tw-line:rgba(255,255,255,.1);--tw-line2:rgba(255,255,255,.06);--tw-tx:#e6ecf5;--tw-tx2:#a3b1c6;--tw-tx3:#7686a0;--tw-soft:rgba(96,165,250,.16);--tw-hov:rgba(255,255,255,.06);--tw-sel:rgba(96,165,250,.2);--tw-sh:0 8px 30px rgba(0,0,0,.5);--tw-acc:#60a5fa}\n#pg-todo.tw-open{display:flex !important}\n#pg-todo *{box-sizing:border-box}\n:where(#pg-todo) button{font-family:inherit;cursor:pointer;color:inherit}\n:where(#pg-todo) input,:where(#pg-todo) select,:where(#pg-todo) textarea{font-family:inherit;font-size:inherit;color:var(--tw-tx)}\nbody.tw-on #login-lang-btn,body.tw-on #sb-hamburger,body.tw-on #sb-overlay{display:none !important}\n#pg-todo .tw-ic{flex:none;display:block}\n.tw-top{height:54px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--tw-surface);border-bottom:1px solid var(--tw-line)}\n.tw-ibtn{width:36px;height:36px;border-radius:9px;border:0;background:transparent;display:inline-flex;align-items:center;justify-content:center;color:var(--tw-tx2);position:relative;flex:none}\n.tw-ibtn:hover{background:var(--tw-hov);color:var(--tw-tx)}\n.tw-brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15.5px;white-space:nowrap}\n.tw-brand .lg{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#6366f1);display:grid;place-items:center;color:#fff}\n.tw-brand small{display:block;font-weight:500;font-size:11px;color:var(--tw-tx3);margin-top:-3px}\n.tw-search{flex:1;max-width:520px;margin-inline:auto;position:relative}\n.tw-search input{width:100%;height:36px;border-radius:9px;border:1px solid var(--tw-line);background:var(--tw-bg);padding-inline:36px 12px;outline:none}\n.tw-search input:focus{border-color:var(--tw-acc);background:var(--tw-surface);box-shadow:0 0 0 3px var(--tw-soft)}\n.tw-search .tw-ic{position:absolute;inset-inline-start:11px;top:9px;color:var(--tw-tx3);pointer-events:none}\n.tw-sync{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--tw-tx3);white-space:nowrap;padding:0 6px}\n.tw-sync i{width:8px;height:8px;border-radius:50%;background:var(--tw-grn)}\n.tw-sync.sv i{background:var(--tw-amb);animation:twp 1s infinite}.tw-sync.of i{background:#94a3b8}.tw-sync.er i{background:var(--tw-red)}.tw-sync.er{color:var(--tw-red)}\n@keyframes twp{50%{opacity:.35}}\n.tw-badge{position:absolute;top:3px;inset-inline-end:2px;min-width:16px;height:16px;border-radius:8px;background:var(--tw-red);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;padding:0 4px}\n.tw-av{width:30px;height:30px;border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-weight:800;font-size:11.5px;flex:none}\n.tw-av.sm{width:22px;height:22px;font-size:9.5px;border:2px solid var(--tw-surface);margin-inline-start:-6px}\n.tw-av.sm:first-child{margin-inline-start:0}\n.tw-body{flex:1;display:flex;min-height:0;position:relative}\n.tw-side{width:268px;flex:none;background:var(--tw-side);border-inline-end:1px solid var(--tw-line);display:flex;flex-direction:column;transition:width .18s ease;overflow:hidden}\n.tw-side-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 8px}\n.tw-nav{display:flex;align-items:center;gap:11px;width:100%;height:38px;padding:0 10px;border:0;background:transparent;border-radius:8px;text-align:start;font-size:14px;font-weight:600;color:var(--tw-tx);position:relative}\n.tw-nav:hover{background:var(--tw-hov)}\n.tw-nav.on{background:var(--tw-sel);color:var(--tw-acc2)}\nhtml.dark .tw-nav.on{color:#93c5fd}\n.tw-nav.on::before{content:\"\";position:absolute;inset-inline-start:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--tw-acc)}\n.tw-nav .tw-ic{color:var(--tw-tx2)}.tw-nav.on .tw-ic{color:inherit}\n.tw-nav .lb{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.tw-nav .ct{font-size:12px;font-weight:700;color:var(--tw-tx3);min-width:18px;text-align:center}\n.tw-nav .ct.red{color:#fff;background:var(--tw-red);border-radius:9px;padding:0 6px}\n.tw-nav.sub{height:34px;padding-inline-start:36px;font-weight:500;font-size:13.5px}\n.tw-sep{height:1px;background:var(--tw-line);margin:8px 6px}\n.tw-sec{display:flex;align-items:center;gap:6px;padding:8px 10px 4px;font-size:11.5px;font-weight:800;letter-spacing:.3px;color:var(--tw-tx3);text-transform:uppercase;width:100%;border:0;background:none}\n.tw-sec .chv{margin-inline-start:auto;transition:transform .15s}.tw-sec.shut .chv{transform:rotate(-90deg)}\nhtml[dir=rtl] .tw-sec.shut .chv{transform:rotate(90deg)}\n.tw-side-foot{flex:none;border-top:1px solid var(--tw-line);padding:8px}\n.tw-newlist{display:flex;align-items:center;gap:8px;height:34px;width:100%;padding:0 10px;border:0;background:none;border-radius:8px;color:var(--tw-acc2);font-weight:700;font-size:13.5px}\n.tw-newlist:hover{background:var(--tw-hov)}\nhtml.dark .tw-newlist{color:#93c5fd}\n.tw-side.col{width:62px}\n.tw-side.col .lb,.tw-side.col .ct,.tw-side.col .tw-sec,.tw-side.col .tw-nav.sub,.tw-side.col .tw-newlist span,.tw-side.col .tw-sep{display:none}\n.tw-side.col .tw-nav{justify-content:center;padding:0}.tw-side.col .tw-nav.on::before{top:6px;bottom:6px}\n.tw-main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--tw-bg)}\n.tw-head{flex:none;padding:18px 28px 6px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}\n.tw-head h1{font-size:24px;font-weight:800;margin:0;display:flex;align-items:center;gap:10px;line-height:1.2}\n.tw-head h1 .tw-ic{color:var(--tw-acc)}\n.tw-head .sub{font-size:13px;color:var(--tw-tx3);font-weight:500}\n.tw-head .sp{flex:1 1 0;min-width:0}\n.tw-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:0 1 auto;justify-content:flex-end}\n.tw-tools .tw-sel,.tw-filters .tw-sel{width:150px}\n@media (max-width:900px){.tw-tools{flex:1 1 100%;justify-content:flex-start}}\n.tw-sel{height:32px;border-radius:8px;border:1px solid var(--tw-line);background:var(--tw-surface);padding:0 8px;font-size:13px;outline:none;max-width:170px}\n.tw-sel:focus{border-color:var(--tw-acc)}\n.tw-tools>*{flex:none}\n.tw-seg{display:inline-flex;flex:none;background:var(--tw-surface);border:1px solid var(--tw-line);border-radius:8px;overflow:hidden}\n.tw-seg button{border:0;background:none;height:30px;padding:0 11px;font-size:13px;font-weight:600;color:var(--tw-tx2)}\n.tw-seg button.on{background:var(--tw-acc);color:#fff}\n.tw-scroll{flex:1;overflow-y:auto;padding:8px 28px 90px}\n.tw-wrap{max-width:900px;margin-inline:auto}\n.tw-wrap.wide{max-width:1180px}\n.tw-add{position:sticky;top:0;z-index:3;background:var(--tw-bg);padding:8px 0 10px}\n.tw-addbox{display:flex;align-items:center;gap:8px;background:var(--tw-surface);border:1px solid var(--tw-line);border-radius:11px;padding:4px 6px 4px 12px;padding-inline:12px 6px;box-shadow:0 1px 2px rgba(15,23,42,.05)}\n.tw-addbox:focus-within{border-color:var(--tw-acc);box-shadow:0 0 0 3px var(--tw-soft)}\n.tw-addbox>.tw-ic{color:var(--tw-acc)}\n.tw-addbox input.q{flex:1;height:40px;border:0;background:transparent;outline:none;font-size:14.5px;min-width:0}\n.tw-addopts{display:flex;gap:6px;align-items:center}\n.tw-addopts .tw-sel{height:28px;font-size:12.5px;max-width:130px}\n.tw-btn{height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--tw-line);background:var(--tw-surface);font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}\n.tw-btn:hover{background:var(--tw-hov)}\n.tw-btn.pri{background:var(--tw-acc2);border-color:var(--tw-acc2);color:#fff}.tw-btn.pri:hover{filter:brightness(1.08)}\n.tw-btn.dng{color:var(--tw-red);border-color:rgba(220,38,38,.35)}.tw-btn.dng:hover{background:rgba(220,38,38,.08)}\n.tw-btn.sm{height:28px;padding:0 10px;font-size:12.5px;border-radius:7px}\n.tw-btn[disabled]{opacity:.5;cursor:not-allowed}\n.tw-hint{font-size:12px;color:var(--tw-tx3);margin-top:5px;padding-inline:4px}\n.tw-grp{font-size:12.5px;font-weight:800;color:var(--tw-tx2);padding:14px 6px 6px;display:flex;gap:8px;align-items:center}\n.tw-grp .n{font-weight:600;color:var(--tw-tx3)}\n.tw-grp.red{color:var(--tw-red)}\n.tw-rows{display:flex;flex-direction:column;gap:5px}\n.tw-row{display:flex;align-items:center;gap:6px;min-height:50px;background:var(--tw-surface);border:1px solid var(--tw-line2);border-radius:10px;padding:6px 8px;cursor:pointer;transition:background .1s,border-color .1s}\n.tw-row:hover{border-color:var(--tw-line);background:color-mix(in srgb,var(--tw-surface) 94%,var(--tw-acc))}\n.tw-row.on{background:var(--tw-sel);border-color:var(--tw-acc)}\n.tw-chk{width:30px;height:30px;border:0;background:none;display:grid;place-items:center;border-radius:50%;flex:none}\n.tw-chk i{width:20px;height:20px;border-radius:50%;border:2px solid var(--tw-tx3);display:grid;place-items:center;color:transparent;transition:all .12s}\n.tw-chk:hover i{border-color:var(--tw-acc);color:var(--tw-acc)}\n.tw-chk.done i{background:var(--tw-acc2);border-color:var(--tw-acc2);color:#fff}\n.tw-chk svg{width:12px;height:12px}\n.tw-rm{flex:1;min-width:0}\n.tw-tt{font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.tw-row.dn .tw-tt{text-decoration:line-through;color:var(--tw-tx3)}\n.tw-meta{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:12px;color:var(--tw-tx3);margin-top:1px}\n.tw-meta .m{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}\n.tw-meta .m .tw-ic{width:13px;height:13px}\n.tw-meta .red{color:var(--tw-red);font-weight:700}.tw-meta .amb{color:var(--tw-amb);font-weight:700}.tw-meta .acc{color:var(--tw-acc2)}\n.tw-pri{display:inline-flex;align-items:center;gap:4px}.tw-pri i{width:8px;height:8px;border-radius:50%}\n.tw-star{width:32px;height:32px;border:0;background:none;border-radius:8px;color:var(--tw-tx3);display:grid;place-items:center;flex:none}\n.tw-star:hover{background:var(--tw-hov);color:var(--tw-amb)}\n.tw-star.on{color:#f59e0b}.tw-star.on svg{fill:#f59e0b}\n.tw-avs{display:flex;flex:none;padding-inline-end:6px}\n.tw-empty{text-align:center;padding:60px 20px;color:var(--tw-tx3)}\n.tw-empty .tw-ic{margin:0 auto 12px;opacity:.5}\n.tw-empty b{display:block;color:var(--tw-tx2);font-size:16px;margin-bottom:4px}\n.tw-more{margin:10px auto;display:block}\n/* لوحة التفاصيل */\n.tw-detail{width:392px;flex:none;background:var(--tw-surface);border-inline-start:1px solid var(--tw-line);display:none;flex-direction:column;min-height:0}\n.tw-detail.open{display:flex}\n.tw-d-top{flex:none;display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--tw-line2)}\n.tw-d-top .sp{flex:1}\n.tw-d-body{flex:1;overflow-y:auto;padding:12px 16px 20px;display:flex;flex-direction:column;gap:10px}\n.tw-d-body>*{flex:none}\n.tw-d-title{display:flex;align-items:flex-start;gap:6px}\n.tw-d-title textarea{flex:1;border:0;background:transparent;resize:none;font-size:17px;font-weight:800;outline:none;padding:4px 2px;line-height:1.4;min-height:30px;overflow:hidden}\n.tw-card{border:1px solid var(--tw-line2);border-radius:10px;background:var(--tw-bg);overflow:hidden}\n.tw-line{display:flex;align-items:center;gap:10px;min-height:42px;padding:6px 12px;border-bottom:1px solid var(--tw-line2);font-size:13.5px}\n.tw-line:last-child{border-bottom:0}\n.tw-line>.tw-ic{color:var(--tw-tx2)}\n.tw-line .k{color:var(--tw-tx2);white-space:nowrap;min-width:78px}\n.tw-line .v{flex:1;min-width:0;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}\n.tw-line input[type=date],.tw-line input[type=datetime-local],.tw-line select,.tw-line input[type=text]{height:30px;border:1px solid transparent;border-radius:7px;background:transparent;padding:0 6px;outline:none;max-width:100%}\n.tw-line input:hover,.tw-line select:hover{background:var(--tw-hov)}\n.tw-line input:focus,.tw-line select:focus{border-color:var(--tw-acc);background:var(--tw-surface)}\n.tw-line input:disabled,.tw-line select:disabled{opacity:.7;cursor:not-allowed}\n.tw-line.btn{cursor:pointer}.tw-line.btn:hover{background:var(--tw-hov)}\n.tw-line.on{color:var(--tw-acc2)}.tw-line.on>.tw-ic{color:var(--tw-acc2)}\n.tw-steps{padding:2px 0}\n.tw-step{display:flex;align-items:center;gap:8px;padding:2px 10px;min-height:38px;border-bottom:1px solid var(--tw-line2)}\n.tw-step .tw-chk{width:26px;height:26px}.tw-step .tw-chk i{width:17px;height:17px}\n.tw-step input.t{flex:1;border:0;background:transparent;outline:none;height:32px;min-width:0}\n.tw-step.dn input.t{text-decoration:line-through;color:var(--tw-tx3)}\n.tw-step .x{opacity:0;border:0;background:none;color:var(--tw-tx3);width:26px;height:26px;border-radius:6px}\n.tw-step:hover .x{opacity:1}.tw-step .x:hover{background:var(--tw-hov);color:var(--tw-red)}\n.tw-step.new input{color:var(--tw-tx)}\n.tw-ta{width:100%;min-height:84px;border:0;background:transparent;resize:vertical;padding:10px 12px;outline:none;line-height:1.6}\n.tw-lbl{font-size:11.5px;font-weight:800;color:var(--tw-tx3);padding:2px 4px;letter-spacing:.3px}\n.tw-chips{display:flex;gap:6px;flex-wrap:wrap}\n.tw-chip{height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--tw-line);background:var(--tw-surface);font-size:12px;font-weight:600;color:var(--tw-tx2)}\n.tw-chip:hover{border-color:var(--tw-acc);color:var(--tw-acc2)}.tw-chip.on{background:var(--tw-acc2);color:#fff;border-color:var(--tw-acc2)}\n.tw-asg{max-height:190px;overflow:auto;padding:4px 6px}\n.tw-asg label{display:flex;align-items:center;gap:9px;padding:5px 6px;border-radius:7px;cursor:pointer;font-size:13.5px}\n.tw-asg label:hover{background:var(--tw-hov)}\n.tw-d-foot{flex:none;display:flex;align-items:center;gap:8px;padding:9px 14px;border-top:1px solid var(--tw-line2);font-size:12px;color:var(--tw-tx3)}\n.tw-d-foot .sp{flex:1}\n/* لوحة المتابعة */\n.tw-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:10px;margin:6px 0 16px}\n.tw-kpi{background:var(--tw-surface);border:1px solid var(--tw-line2);border-radius:11px;padding:11px 13px;text-align:start;display:flex;flex-direction:column;gap:2px;position:relative;min-height:74px}\nbutton.tw-kpi:hover{border-color:var(--tw-acc);box-shadow:0 2px 10px rgba(15,23,42,.08)}\n.tw-kpi .n{font-size:26px;font-weight:800;line-height:1.1}\n.tw-kpi .l{font-size:12.5px;color:var(--tw-tx2);font-weight:600}\n.tw-kpi.red .n{color:var(--tw-red)}.tw-kpi.amb .n{color:var(--tw-amb)}.tw-kpi.grn .n{color:var(--tw-grn)}.tw-kpi.acc .n{color:var(--tw-acc2)}\n.tw-kpi .bar{height:5px;border-radius:3px;background:var(--tw-line);overflow:hidden;margin-top:5px}.tw-kpi .bar b{display:block;height:100%;background:var(--tw-grn);border-radius:3px}\n.tw-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}\n.tw-panel{background:var(--tw-surface);border:1px solid var(--tw-line2);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}\n.tw-panel>h3{margin:0;font-size:14px;font-weight:800;padding:11px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--tw-line2)}\n.tw-panel>h3 .tw-ic{color:var(--tw-acc)}.tw-panel>h3 .sp{flex:1}\n.tw-panel>h3 a{font-size:12px;font-weight:600;color:var(--tw-acc2);cursor:pointer}\n.tw-mini{display:flex;align-items:center;gap:9px;padding:8px 14px;border-bottom:1px solid var(--tw-line2);cursor:pointer;font-size:13.5px}\n.tw-mini:last-child{border-bottom:0}.tw-mini:hover{background:var(--tw-hov)}\n.tw-mini .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}\n.tw-mini .d{font-size:12px;color:var(--tw-tx3);white-space:nowrap}.tw-mini .d.red{color:var(--tw-red);font-weight:700}\n.tw-mini .dot{width:8px;height:8px;border-radius:50%;flex:none}\n.tw-none{padding:18px 14px;color:var(--tw-tx3);font-size:13px;text-align:center}\n.tw-tbl{width:100%;border-collapse:collapse;font-size:13px}\n.tw-tbl th{font-size:11.5px;color:var(--tw-tx3);font-weight:700;text-align:start;padding:7px 12px;border-bottom:1px solid var(--tw-line2)}\n.tw-tbl td{padding:7px 12px;border-bottom:1px solid var(--tw-line2)}.tw-tbl tr:last-child td{border-bottom:0}\n.tw-tbl tbody tr{cursor:pointer}.tw-tbl tbody tr:hover{background:var(--tw-hov)}\n.tw-tbl td.r{color:var(--tw-red);font-weight:700}.tw-tbl td.g{color:var(--tw-grn);font-weight:700}\n.tw-mb{height:6px;border-radius:3px;background:var(--tw-line);overflow:hidden;min-width:70px}.tw-mb b{display:block;height:100%;background:var(--tw-acc)}\n/* التقويم */\n.tw-cal{background:var(--tw-surface);border:1px solid var(--tw-line2);border-radius:12px;overflow:hidden}\n.tw-cal-h{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--tw-line2);background:var(--tw-side)}\n.tw-cal-h div{padding:7px;text-align:center;font-size:12px;font-weight:800;color:var(--tw-tx2)}\n.tw-cal-g{display:grid;grid-template-columns:repeat(7,1fr)}\n.tw-cd{min-height:96px;border-inline-end:1px solid var(--tw-line2);border-bottom:1px solid var(--tw-line2);padding:4px;cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0}\n.tw-cd:hover{background:var(--tw-hov)}.tw-cd.out{background:var(--tw-side);opacity:.6}.tw-cd.sel{background:var(--tw-sel)}\n.tw-cd .dn{font-size:12px;font-weight:700;color:var(--tw-tx2);width:24px;height:24px;display:grid;place-items:center;border-radius:50%}\n.tw-cd.today .dn{background:var(--tw-acc2);color:#fff}\n.tw-ev{font-size:11px;padding:1px 6px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(37,99,235,.14);color:#1d4ed8;border-inline-start:3px solid #2563eb}\nhtml.dark .tw-ev{color:#bfdbfe}\n.tw-ev.tk{background:rgba(217,119,6,.14);color:#b45309;border-color:#d97706}.tw-ev.tk.od{background:rgba(220,38,38,.13);color:#b91c1c;border-color:#dc2626}\nhtml.dark .tw-ev.tk{color:#fcd34d}html.dark .tw-ev.tk.od{color:#fca5a5}\n.tw-ev.dnn{opacity:.55;text-decoration:line-through}\n.tw-more-n{font-size:11px;color:var(--tw-tx3);padding-inline:4px}\n.tw-day{margin-top:14px}\n/* البريد */\n.tw-mrow{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;background:var(--tw-surface);border:1px solid var(--tw-line2);border-radius:10px;cursor:pointer}\n.tw-mrow:hover{border-color:var(--tw-line)}.tw-mrow.on{background:var(--tw-sel);border-color:var(--tw-acc)}\n.tw-mrow.unread .s{font-weight:800}.tw-mrow.unread::before{content:\"\";width:8px;height:8px;border-radius:50%;background:var(--tw-acc);margin-top:9px;flex:none}\n.tw-mrow .f{font-weight:700;font-size:13.5px}.tw-mrow .s{font-size:13.5px;margin-top:1px}\n.tw-mrow .p{font-size:12.5px;color:var(--tw-tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}\n.tw-mrow .dt{font-size:11.5px;color:var(--tw-tx3);white-space:nowrap}\n.tw-mbody{white-space:pre-wrap;font-size:13.5px;line-height:1.7;padding:12px;max-height:300px;overflow:auto;direction:auto;word-break:break-word}\n.tw-card.pad{padding:14px 16px}\n.tw-setup{max-width:640px;margin:20px auto;background:var(--tw-surface);border:1px solid var(--tw-line2);border-radius:14px;padding:22px 24px}\n.tw-setup h2{margin:0 0 6px;font-size:18px;display:flex;align-items:center;gap:8px}.tw-setup p{margin:0 0 12px;color:var(--tw-tx2)}\n.tw-setup ol{margin:0 0 14px;padding-inline-start:20px;color:var(--tw-tx2);font-size:13.5px;line-height:1.9}\n.tw-setup code,.tw-code{background:var(--tw-bg);border:1px solid var(--tw-line);border-radius:6px;padding:1px 7px;font-family:Consolas,monospace;font-size:12.5px;direction:ltr;display:inline-block;word-break:break-all;color:var(--tw-tx)}\n.tw-fld{display:flex;flex-direction:column;gap:5px;margin:10px 0}\n.tw-fld label{font-size:12.5px;font-weight:700;color:var(--tw-tx2)}\n.tw-fld input[type=text]{height:38px;border:1px solid var(--tw-line);border-radius:9px;background:var(--tw-bg);padding:0 11px;outline:none;direction:ltr;text-align:start}\n.tw-fld input:focus{border-color:var(--tw-acc);box-shadow:0 0 0 3px var(--tw-soft)}\n.tw-err{background:rgba(220,38,38,.09);border:1px solid rgba(220,38,38,.3);color:var(--tw-red);border-radius:9px;padding:9px 12px;font-size:13px;margin:10px 0}\n.tw-ok{background:rgba(5,150,105,.09);border:1px solid rgba(5,150,105,.3);color:var(--tw-grn);border-radius:9px;padding:9px 12px;font-size:13px;margin:10px 0}\n.tw-set{display:flex;flex-direction:column;gap:14px}\n.tw-set .tw-panel .row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--tw-line2);flex-wrap:wrap}\n.tw-set .tw-panel .row:last-child{border-bottom:0}\n.tw-set .row .k{flex:1;min-width:180px}.tw-set .row .k b{display:block;font-size:14px}.tw-set .row .k span{font-size:12.5px;color:var(--tw-tx3)}\n/* حوارات */\n.tw-dlg-bg{position:fixed;inset:0;z-index:70;background:rgba(10,18,32,.5);display:grid;place-items:center;padding:16px}\n.tw-dlg{background:var(--tw-surface);color:var(--tw-tx);border-radius:14px;box-shadow:var(--tw-sh);padding:20px;width:min(400px,100%);border:1px solid var(--tw-line)}\n.tw-dlg h4{margin:0 0 6px;font-size:16px}.tw-dlg p{margin:0 0 14px;color:var(--tw-tx2);font-size:13.5px}\n.tw-dlg input{width:100%;height:38px;border:1px solid var(--tw-line);border-radius:9px;background:var(--tw-bg);padding:0 11px;margin-bottom:14px;outline:none}\n.tw-dlg .bt{display:flex;gap:8px;justify-content:flex-end}\n.tw-menu{position:fixed;z-index:75;background:var(--tw-surface);border:1px solid var(--tw-line);border-radius:11px;box-shadow:var(--tw-sh);min-width:210px;padding:6px}\n.tw-menu button{display:flex;align-items:center;gap:10px;width:100%;height:36px;padding:0 10px;border:0;background:none;border-radius:7px;font-size:13.5px;text-align:start}\n.tw-menu button:hover{background:var(--tw-hov)}\n.tw-menu .hd{padding:8px 10px;font-size:12.5px;color:var(--tw-tx3);border-bottom:1px solid var(--tw-line2);margin-bottom:4px}\n.tw-fab{display:none}\n.tw-scrim{display:none}\n@media (max-width:1180px){.tw-detail{position:absolute;inset-block:0;inset-inline-end:0;z-index:20;box-shadow:var(--tw-sh);width:min(420px,100%)}}\n@media (max-width:900px){\n .tw-side{position:absolute;inset-block:0;inset-inline-start:0;z-index:30;box-shadow:var(--tw-sh);transform:translateX(-105%);transition:transform .2s;width:280px}\n html[dir=rtl] .tw-side{transform:translateX(105%)}\n .tw-side.mob{transform:none}.tw-side.col{width:280px}.tw-side.col .lb,.tw-side.col .ct,.tw-side.col .tw-sec,.tw-side.col .tw-nav.sub,.tw-side.col .tw-newlist span,.tw-side.col .tw-sep{display:revert}.tw-side.col .tw-nav{justify-content:flex-start;padding:0 10px}\n .tw-scrim.on{display:block;position:absolute;inset:0;background:rgba(10,18,32,.45);z-index:25}\n .tw-head{padding:14px 14px 4px}.tw-scroll{padding:6px 12px 90px}.tw-sync span{display:none}\n .tw-brand small{display:none}.tw-detail{width:100%}\n .tw-addopts .tw-sel.hid-m{display:none}\n .tw-cd{min-height:70px}.tw-ev{font-size:10px;padding:0 3px}\n}\n@media (max-width:560px){.tw-brand span.t{display:none}.tw-head h1{font-size:20px}.tw-kpis{grid-template-columns:repeat(2,1fr)}.tw-grid{grid-template-columns:1fr}.tw-cd{min-height:58px}.tw-ev{display:none}.tw-cd .dots{display:flex}}\n.tw-cd .dots{display:none;gap:2px;flex-wrap:wrap;padding:0 3px}.tw-cd .dots i{width:6px;height:6px;border-radius:50%;background:#2563eb}.tw-cd .dots i.t{background:#d97706}.tw-cd .dots i.o{background:#dc2626}\n#pg-todo :focus-visible{outline:2px solid var(--tw-acc);outline-offset:1px}\n@media (prefers-reduced-motion:reduce){#pg-todo *{transition:none !important;animation:none !important}}\n\n.tw-filters{flex:none;display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:6px 28px 2px;max-width:956px;margin-inline:auto;width:100%}\n@media (max-width:900px){.tw-filters{padding:6px 14px 2px}}\n"; document.head.appendChild(css);
+  OL.refreshState();
+  /* إخفاء القائمة الكلاسيكية والصفحات القديمة عند عرض مساحة العمل */
+  safeWrap('showPage',function(o){ return function(id){ if(id!=='pg-todo') closeWorkspace(); return o.apply(this,arguments); }; });
+  safeWrap('sbShow',function(o){ return function(){ if(isOpenNow()) return; return o.apply(this,arguments); }; });
+  /* بعد الدخول: افتح مساحة العمل (مدير/موظف) */
+  ['initMgr','initEmp'].forEach(function(n){
+    safeWrap(n,function(o){ return function(){ var r=o.apply(this,arguments); if(landingOn() && !TW._leaving){ try{ TW.open(); }catch(e){ console.error('[TW] open',e); } } return r; }; });
+  });
+  /* مزامنة اللحظية: أي حفظ/استلام بيانات من Firebase يحدّث الواجهة */
+  var rt=debounce(function(){ if(isOpenNow()) refreshLight(); },200);
+  safeWrap('saveDB',function(o){ return function(){ var r=o.apply(this,arguments); rt(); return r; }; });
+  safeWrap('refreshCurrentView',function(o){ return function(){ var r; try{ r=o.apply(this,arguments); }catch(e){} rt(); return r; }; });
+  safeWrap('saveTask',function(o){ return function(){ var r=o.apply(this,arguments); Promise.resolve(r).then(function(){ invalidate(); rt(); }); return r; }; });
+  safeWrap('deleteTask',function(o){ return function(){ var r=o.apply(this,arguments); setTimeout(function(){ invalidate(); rt(); },60); return r; }; });
+  /* زر "مساحة المهام" داخل القائمة الكلاسيكية */
+  try{
+    var menu=$id('sb-menu');
+    if(menu && !TW.disabled){
+      var ensure=function(){ if($id('sb-item-tw')||!menu.firstChild&&!menu.children.length) return; var b=document.createElement('button'); b.className='sb-item'; b.id='sb-item-tw'; b.setAttribute('role','menuitem'); b.innerHTML='<span class="sb-item-icon">✅</span><span class="sb-item-label">'+esc(L('مساحة المهام','Task workspace'))+'</span>'; b.addEventListener('click',function(){ try{ if(typeof sbClose==='function') sbClose(); }catch(e){} TW.open(); }); menu.insertBefore(b,menu.firstChild); };
+      new MutationObserver(ensure).observe(menu,{childList:true}); ensure();
+    }
+  }catch(e){}
+  /* جلسة قائمة أصلًا عند تحميل هذا الملف */
+  try{
+    if(me() && landingOn() && me().role!=='admin'){
+      var pg=['pg-mgr','pg-emp'].some(function(p){ var el=$id(p); return el && el.style.display!=='none' && el.offsetParent!==null; });
+      if(pg) TW.open();
+    }
+  }catch(e){}
+  OL.boot();
+}
+TW.refresh=refreshLight; TW.checkReminders=checkReminders; TW.state=S; TW._i={visible:visible,counts:counts,createTask:createTask,applyStatus:applyStatus,parseQuick:parseQuick,eff:eff,isOverdue:isOverdue};
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',install); else install();
+})();
+
+</script>
