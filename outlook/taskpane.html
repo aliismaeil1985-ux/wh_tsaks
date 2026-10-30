@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>تانيا — تحويل إلى مهمة</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="tania-ol.js"></script>
+<style>
+:root{--acc:#db2777;--acc2:#7c3aed;--tx:#0f172a;--tx2:#475569;--tx3:#94a3b8;--ln:#e2e8f0;--bg:#f6f7fb;--card:#fff;--ok:#059669;--err:#dc2626}
+@media (prefers-color-scheme:dark){:root{--tx:#eef2ff;--tx2:#c7cfe0;--tx3:#8a94ad;--ln:rgba(255,255,255,.12);--bg:#0f1529;--card:#18203a}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.6 "Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif}
+.wrap{padding:14px 14px calc(18px + env(safe-area-inset-bottom));max-width:520px;margin:0 auto}
+.hd{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.hd img{width:38px;height:38px;border-radius:11px;flex:none}
+.hd b{display:block;font-size:15.5px}.hd span{font-size:12px;color:var(--tx3)}
+.mail{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:10px 12px;margin-bottom:12px}
+.mail .s{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail .f{font-size:12px;color:var(--tx3);direction:ltr;text-align:end;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.go{width:100%;height:52px;border:0;border-radius:14px;color:#fff;font:inherit;font-size:16px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 12px 26px -10px rgba(219,39,119,.6);transition:transform .1s,filter .15s}
+.go:active{transform:scale(.98)}.go:disabled{filter:grayscale(.4);opacity:.75;cursor:default}
+.go svg{width:22px;height:22px}
+.opt{margin-top:12px;background:var(--card);border:1px solid var(--ln);border-radius:14px;overflow:hidden}
+.opt summary{list-style:none;cursor:pointer;padding:11px 12px;font-weight:700;font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:6px}
+.opt summary::-webkit-details-marker{display:none}
+.opt summary:after{content:"▾";margin-inline-start:auto;transition:transform .15s}
+.opt[open] summary:after{transform:rotate(180deg)}
+.fl{padding:0 12px 12px}
+label{display:block;font-size:12px;font-weight:700;color:var(--tx2);margin:10px 0 5px}
+input,select,textarea{width:100%;font:inherit;font-size:14px;color:var(--tx);background:var(--bg);border:1.5px solid var(--ln);border-radius:11px;padding:9px 11px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--acc)}
+textarea{min-height:64px;resize:vertical}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{flex:1;min-width:60px;border:1.5px solid var(--ln);background:var(--bg);color:var(--tx2);border-radius:10px;padding:7px 4px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.seg button.on{border-color:transparent;color:#fff;background:var(--c,var(--acc))}
+.chips{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.chips button{border:1px solid var(--ln);background:var(--card);color:var(--tx2);border-radius:99px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer}
+.people{max-height:170px;overflow:auto;border:1.5px solid var(--ln);border-radius:11px;background:var(--bg)}
+.people label{display:flex;align-items:center;gap:8px;margin:0;padding:7px 10px;font-size:13.5px;font-weight:600;color:var(--tx);cursor:pointer;border-bottom:1px solid var(--ln)}
+.people label:last-child{border-bottom:0}
+.people input{width:18px;height:18px;margin:0;accent-color:var(--acc)}
+.people small{margin-inline-start:auto;color:var(--tx3);font-size:11px;direction:ltr}
+.st{margin-top:12px;padding:10px 12px;border-radius:12px;font-size:13px;font-weight:700;display:none}
+.st.on{display:block}.st.ok{background:rgba(5,150,105,.1);color:var(--ok)}.st.err{background:rgba(220,38,38,.1);color:var(--err)}.st.info{background:rgba(124,58,237,.1);color:var(--acc2)}
+.st a{color:inherit}
+.ft{margin-top:14px;text-align:center;font-size:12px}.ft a{color:var(--acc);font-weight:700;text-decoration:none}
+.muted{color:var(--tx3);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd"><img src="icon-80.png" alt=""><div><b>تانيا — تحويل البريد إلى مهمة</b><span>ينتقل البريد إلى منصة المهام بنقرة واحدة</span></div></div>
+  <div class="mail"><div class="s" id="m-s">…</div><div class="f" id="m-f"></div></div>
+  <button class="go" id="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M12 6l6 6-6 6"/></svg><span id="go-t">تحويل إلى مهمة</span></button>
+  <div class="st" id="st"></div>
+  <details class="opt" id="opt">
+    <summary>خيارات المهمة (اختياري)</summary>
+    <div class="fl">
+      <label for="f-title">عنوان المهمة</label><input id="f-title" maxlength="200">
+      <label>الأولوية</label>
+      <div class="seg" id="f-pri"><button data-v="low" style="--c:#16a34a">منخفضة</button><button data-v="medium" class="on" style="--c:#ca8a04">متوسطة</button><button data-v="high" style="--c:#ea580c">عالية</button><button data-v="urgent" style="--c:#dc2626">عاجلة</button></div>
+      <label for="f-due">تاريخ الاستحقاق</label><input id="f-due" type="date">
+      <div class="chips"><button data-d="0">اليوم</button><button data-d="1">غدًا</button><button data-d="3">بعد 3 أيام</button><button data-d="7">بعد أسبوع</button><button data-d="">بدون</button></div>
+      <label>المكلَّفون</label>
+      <div class="people" id="f-ppl"><div class="muted" style="padding:10px">جارٍ تحميل الفريق…</div></div>
+      <label for="f-note">ملاحظة للمكلَّف</label><textarea id="f-note" maxlength="2000" placeholder="مثال: يرجى الرد على العميل قبل الظهر"></textarea>
+    </div>
+  </details>
+  <div class="ft"><a href="https://wh-tsaks.pages.dev/" target="_blank" rel="noopener">فتح منصة المهام ↗</a></div>
+</div>
+<script>
+(function(){
+  var $=function(i){ return document.getElementById(i); };
+  var pri="medium", peopleLoaded=false, sending=false;
+  function status(cls, html){ var s=$("st"); s.className="st on "+cls; s.innerHTML=html; }
+  function ymd(d){ return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+  $("f-pri").addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b) return; pri=b.getAttribute("data-v"); [].forEach.call(this.children,function(x){ x.classList.toggle("on",x===b); }); });
+  document.querySelector(".chips").addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b) return; var d=b.getAttribute("data-d"); if(d===""){ $("f-due").value=""; return; } var t=new Date(); t.setDate(t.getDate()+(+d)); $("f-due").value=ymd(t); });
+  $("opt").addEventListener("toggle",function(){ if(this.open&&!peopleLoaded) loadPeople(); });
+  function loadPeople(){
+    peopleLoaded=true; var mine=TOL.me().email;
+    TOL.users().then(function(list){
+      if(!list.length){ $("f-ppl").innerHTML='<div class="muted" style="padding:10px">لا يوجد مستخدمون</div>'; return; }
+      var meIn=list.some(function(u){ return u.email===mine; });
+      $("f-ppl").innerHTML=list.map(function(u){ return '<label><input type="checkbox" value="'+u.email.replace(/"/g,"")+'"'+(u.email===mine?" checked":"")+'><span>'+u.name.replace(/</g,"&lt;")+(u.email===mine?" (أنا)":"")+'</span><small>'+u.email.replace(/</g,"&lt;")+'</small></label>'; }).join("");
+      if(!meIn) status("info","⚠️ بريدك في Outlook ("+mine+") غير مسجّل في المنصة — اختر المكلَّف من القائمة، وإلا تُسند المهمة للأدمن.");
+    },function(e){ $("f-ppl").innerHTML='<div class="muted" style="padding:10px">تعذّر تحميل الفريق — ستُسند المهمة إليك. ('+TOL.errText(e)+')</div>'; });
+  }
+  function selected(){ return [].map.call(document.querySelectorAll("#f-ppl input:checked"),function(i){ return i.value; }); }
+  function send(force){
+    if(sending) return; sending=true; $("go").disabled=true; $("go-t").textContent="جارٍ التحويل…";
+    status("info","⏳ جارٍ إرسال البريد إلى منصة المهام…");
+    var opts={ title:$("f-title").value.trim(), priority:pri, deadline:$("f-due").value, note:$("f-note").value.trim(), force:!!force };
+    if(peopleLoaded){ var s=selected(); if(s.length) opts.assignToEmails=s; }
+    TOL.send(opts).then(function(r){
+      if(r.dup){
+        status("info",(r.processed?"ℹ️ هذه الرسالة محوّلة سابقًا إلى مهمة.":"ℹ️ هذه الرسالة في قائمة الانتظار وستظهر كمهمة فور فتح المنصة.")+' <a href="#" id="again">إنشاء مهمة جديدة منها مرة أخرى</a>');
+        var a=$("again"); if(a) a.onclick=function(e){ e.preventDefault(); sending=false; send(true); };
+        done(); return;
+      }
+      status("ok","✓ أُرسلت — جارٍ إنشاء المهمة…");
+      TOL.waitProcessed(r.docId,9000).then(function(tid){
+        status("ok", tid ? '✓ تم إنشاء المهمة في منصة تانيا. <a href="'+TOL.PLATFORM+'" target="_blank" rel="noopener">فتح المنصة</a>' : "✓ أُرسلت بنجاح — ستظهر كمهمة فور فتح المنصة على أي جهاز.");
+        $("go-t").textContent="تم ✓"; sending=false;
+      });
+    }).catch(function(e){ status("err","❌ تعذّر التحويل: "+TOL.errText(e)); done(); });
+    function done(){ sending=false; $("go").disabled=false; $("go-t").textContent="تحويل إلى مهمة"; }
+  }
+  $("go").addEventListener("click",function(){ send(false); });
+  Office.onReady(function(){
+    var it=Office.context.mailbox&&Office.context.mailbox.item; if(!it){ status("err","افتح رسالة أولًا."); $("go").disabled=true; return; }
+    $("m-s").textContent=it.subject||"(بدون عنوان)"; var f=it.from||it.sender||{}; $("m-f").textContent=(f.displayName||"")+" <"+(f.emailAddress||"")+">";
+    $("f-title").placeholder="📧 "+(it.subject||"");
+  });
+})();
+</script>
+</body>
+</html>
