@@ -3782,6 +3782,7 @@ function getPW(uid){return PW[uid]||(DB.users.find(u=>u.id===uid)?.password||USE
 function $(id){return document.getElementById(id)}
 function notif(msg,type){
 type=type||'ok';
+try{ if(window.NTF&&typeof NTF.simple==='function'){ var _d=document.createElement('div'); _d.innerHTML=String(msg==null?'':msg); var _tx=(_d.textContent||'').trim(); if(_tx){ NTF.simple(_tx, type==='ok'?'ok':(type==='err'?'err':(type==='warn'?'warn':'info'))); return; } } }catch(_e){}
 // ── بانر علوي لتأكيد العمليات الذاتية (لا يُضاف للإشعارات) ──
 var n=document.getElementById('notif');
 if(!n)return;
@@ -11989,6 +11990,7 @@ el.classList.toggle('has-count', count > 0);
 function showToast(notifObj){
 var stack = document.getElementById('ntf-toast-stack');
 if(!stack) return;
+(window.__ntfToasted=window.__ntfToasted||{})[notifObj.id]=1;
 var existing = stack.querySelectorAll('.ntf-toast-card');
 if(existing.length >= MAX_TOASTS){
 dismissToast(existing[0], true);
@@ -11998,9 +12000,9 @@ var card = document.createElement('div');
 card.className = 'ntf-toast-card';
 card.setAttribute('data-type', notifObj.type);
 card.setAttribute('data-ntf-id', notifObj.id);
-card.setAttribute('role', 'alert');
+card.setAttribute('role', 'alert'); card.setAttribute('data-eph', notifObj.ephemeral?'1':'0');
 var cleanTitle = (notifObj.title||'').replace(/^(📋|✏️|📅|🔴|⏰|🎯|📝)\s*/,'');
-var truncTitle = cleanTitle.length > 52 ? cleanTitle.substring(0,49)+'…' : cleanTitle;
+var _tl = notifObj.ephemeral ? 160 : 52; var truncTitle = cleanTitle.length > _tl ? cleanTitle.substring(0,_tl-3)+'…' : cleanTitle;
 var dlMatch = (notifObj.body||'').match(/📅[^:\n]*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
 var dlVal = dlMatch ? dlMatch[1] : (notifObj.deadline||'');
 var cleanBody = (notifObj.body||'').replace(/\n?📋[^\n]*/g,'').replace(/\n?📅[^\n]*/g,'').replace(/^\n+/,'').trim();
@@ -12511,6 +12513,7 @@ var taskId = options.taskId || null;
 var silent = options.silent || false;
 return _addNotification(type, title, body, taskId, !silent, options);
 },
+showToast: function(it){ return showToast(it); },
 simple: function(msg, kind){
 var map = { ok:'success', err:'error', info:'info', warn:'warn' };
 var type = map[kind] || (kind === 'err' ? 'error' : 'info');
@@ -17785,6 +17788,7 @@ async function authLogin(){
   if(AUTHS.busy) return; var now=Date.now();
   try{ if(loginAttempts.lockUntil>now){ authErr('🔒 '+L('تم تأمين الدخول مؤقتاً — انتظر ','Temporarily locked — wait ')+Math.ceil((loginAttempts.lockUntil-now)/1000)+L(' ثانية',' s')); return; } }catch(e){}
   var email=(($id('L-email')||{}).value||'').trim().toLowerCase(), pass=($id('L-pass')||{}).value||'';
+  if(!email&&!pass&&window.__authRestoreUser){ var _ru=window.__authRestoreUser; AUTHS.busy=true; authBtn(true); authErr(''); try{ window.__authRestoreUser=null; await authFinish(_ru,{via:'login'}); }catch(e){ console.error('[auth]',e); authErr(L('❌ خطأ في تسجيل الدخول، حاول مرة أخرى','❌ Sign-in error, try again')); } finally{ AUTHS.busy=false; authBtn(false); } return; }
   if(!email||!pass){ authErr(L('يرجى إدخال رقم الهوية / المستخدم وكلمة المرور','Enter your ID / username and password')); return; }
   if(email.indexOf('@')<0){ /* رقم الهوية أو اسم المستخدم → البريد المسجّل (الدخول نفسه يبقى عبر Firebase بالبريد) */
     var fnd=function(list){ return (list||[]).filter(function(u){ if(!u||!u.email) return false; var em0=String(u.email).toLowerCase(); return String(u.id)===email||String(u.empId||'')===email||em0.split('@')[0]===email||String(u.name||'').trim().toLowerCase()===email||String(u.enName||'').trim().toLowerCase()===email; })[0]; };
@@ -17835,7 +17839,7 @@ async function authRestore(){
     if(typeof CU!=='undefined'&&CU){ authBootEnd(); return; }
     if(!(await authWaitFb(9000))){ authBootEnd(); return; }
     var u=await authInit();
-    if(authIsPw(u)&&!localStorage.getItem('tw_locked')){ await authFinish(u,{via:'restore'}); }
+    if(authIsPw(u)&&!localStorage.getItem('tw_locked')){ /* لا دخول تلقائي: تُفتح شاشة تسجيل الدخول، والتطبيق لا يُفتح إلا بالنقر على «تسجيل الدخول» */ window.__authRestoreUser=u; authBootEnd(); try{ var _le=$id('login-err'); if(_le){ _le.textContent=L('اضغط «تسجيل الدخول» للمتابعة بحسابك المحفوظ: ','Press “Sign in” to continue as ')+(u.email||''); _le.style.color='#2563eb'; _le.style.display='block'; } }catch(e){} }
     else { try{ sessionStorage.removeItem('cu'); }catch(e){} authBootEnd(); }
   }catch(e){ authBootEnd(); }
   finally{ clearTimeout(guard); }
@@ -18732,6 +18736,7 @@ function css(){
 }
 var shown={};
 function banner(n){
+  try{ if(window.NTF&&NTF.showToast){ if(n.id&&shown[n.id]) return; if(n.id) shown[n.id]=1; if(n.id&&window.__ntfToasted&&window.__ntfToasted[n.id]) return; NTF.showToast({id:n.id||('pw'+Date.now()),type:n.type||'info',title:n.title||'',body:n.body||'',taskId:n.taskId,ephemeral:true}); return; } }catch(e){}
   css(); if(n.id&&shown[n.id]) return; if(n.id) shown[n.id]=1;
   var st=$('pw-stack'); if(!st){ st=document.createElement('div'); st.id='pw-stack'; document.body.appendChild(st); }
   while(st.children.length>=3) st.removeChild(st.firstChild);
@@ -18751,7 +18756,7 @@ function alertNew(list,fromResume){
 }
 /* قراءة إشعارات المستخدم من التخزين المتزامن */
 function items(){ try{ return JSON.parse(localStorage.getItem('ntf_v6_'+uid())||'[]')||[]; }catch(e){ return []; } }
-function norm(x){ return {id:x.id,title:x.title||'',body:String(x.body||'').split('\n')[0],taskId:x.taskId,ts:new Date(x.ts||0).getTime(),unread:x.state==='unread'}; }
+function norm(x){ return {type:x.type,id:x.id,title:x.title||'',body:String(x.body||'').split('\n')[0],taskId:x.taskId,ts:new Date(x.ts||0).getTime(),unread:x.state==='unread'}; }
 function seenKey(){ return 'tw_ntf_seen_'+uid(); }
 function seenTs(){ var v=lg(seenKey(),null); if(v==null){ var m=0; items().forEach(function(x){ var t=norm(x).ts; if(t>m) m=t; }); ls(seenKey(),m); return m; } return v; }
 function badge(){ try{ var c=items().filter(function(x){ return x.state==='unread'; }).length; if(navigator.setAppBadge){ c?navigator.setAppBadge(c):navigator.clearAppBadge(); } }catch(e){} }
@@ -18959,3 +18964,40 @@ if(document.body) start(); else document.addEventListener('DOMContentLoaded',sta
 window.addEventListener('load',function(){ setTimeout(run,300); });
 })();
 </script>
+<style id="tn-entry-notif">
+html.tw-boot #tw-boot{display:none !important}
+#splash-hint{display:none !important}
+/* ===== إشعارات موحّدة: موقع واحد (أعلى اليسار) وألوان واضحة ===== */
+@keyframes tnInLeft{from{opacity:0;transform:translateX(-32px)}to{opacity:1;transform:translateX(0)}}
+#notif,#pw-stack{display:none !important}
+#ntf-toast-stack{position:fixed !important;top:calc(var(--hdr-h,68px) + 12px) !important;left:16px !important;right:auto !important;width:min(380px,calc(100vw - 32px)) !important;z-index:2147483000 !important;display:flex !important;flex-direction:column !important;gap:10px !important;align-items:stretch !important;direction:rtl}
+.ntf-toast-card{--c:#2563eb;--bg:#eff6ff;--tx:#1e3a8a;background:var(--bg) !important;border:2px solid var(--c) !important;border-radius:14px !important;box-shadow:0 10px 30px rgba(15,23,42,.22) !important;animation:tnInLeft .35s cubic-bezier(.22,1,.36,1) both !important;transform:none}
+.ntf-toast-card:hover{transform:none !important}
+.ntf-toast-card::after{display:none !important}
+.ntf-toast-card .ntf-toast-inner{padding:12px 14px 12px 38px}
+.ntf-toast-card .ntf-toast-icon{background:var(--c) !important;color:#fff !important;border-radius:10px !important;width:36px !important;height:36px !important;font-size:17px !important;box-shadow:none !important}
+.ntf-toast-card .ntf-toast-type-pill{background:var(--c) !important;color:#fff !important;font-weight:800 !important}
+.ntf-toast-card .ntf-toast-title{color:var(--tx) !important;font-size:14px !important;font-weight:800 !important;-webkit-line-clamp:4 !important}
+.ntf-toast-card .ntf-toast-msg{color:var(--tx) !important;opacity:.9 !important;font-size:12.5px !important}
+.ntf-toast-card .ntf-toast-time{color:var(--tx) !important;opacity:.7}
+.ntf-toast-card[data-eph="1"] .ntf-toast-time{display:none}
+.ntf-toast-card .ntf-toast-progress{background:var(--c) !important;height:4px !important}
+.ntf-toast-card .ntf-toast-close{background:rgba(255,255,255,.85) !important;color:#334155 !important}
+.ntf-toast-card[data-type="success"],.ntf-toast-card[data-type="status:completed"]{--c:#15803d;--bg:#f0fdf4;--tx:#14532d}
+.ntf-toast-card[data-type="error"]{--c:#dc2626;--bg:#fef2f2;--tx:#7f1d1d}
+.ntf-toast-card[data-type="warn"]{--c:#b45309;--bg:#fffbeb;--tx:#78350f}
+.ntf-toast-card[data-type="deadline"]{--c:#c2410c;--bg:#fff7ed;--tx:#7c2d12}
+.ntf-toast-card[data-type="info"],.ntf-toast-card[data-type="new-task"]{--c:#2563eb;--bg:#eff6ff;--tx:#1e3a8a}
+.ntf-toast-card[data-type="task-update"],.ntf-toast-card[data-type="approval"]{--c:#6d28d9;--bg:#f5f3ff;--tx:#3b0764}
+.ntf-toast-card[data-type="comment"],.ntf-toast-card[data-type="followup"]{--c:#0f766e;--bg:#f0fdfa;--tx:#134e4a}
+.ntf-toast-card[data-type="request"]{--c:#c2410c;--bg:#fff7ed;--tx:#7c2d12}
+html.dark .ntf-toast-card{--bg:#0f172a;--tx:#f1f5f9}
+html.dark .ntf-toast-card[data-type="success"],html.dark .ntf-toast-card[data-type="status:completed"]{--c:#22c55e;--bg:#052e16}
+html.dark .ntf-toast-card[data-type="error"]{--c:#f87171;--bg:#450a0a}
+html.dark .ntf-toast-card[data-type="warn"]{--c:#fbbf24;--bg:#451a03}
+html.dark .ntf-toast-card[data-type="deadline"],html.dark .ntf-toast-card[data-type="request"]{--c:#fb923c;--bg:#431407}
+html.dark .ntf-toast-card[data-type="info"],html.dark .ntf-toast-card[data-type="new-task"]{--c:#60a5fa;--bg:#172554}
+html.dark .ntf-toast-card[data-type="task-update"],html.dark .ntf-toast-card[data-type="approval"]{--c:#a78bfa;--bg:#2e1065}
+html.dark .ntf-toast-card[data-type="comment"],html.dark .ntf-toast-card[data-type="followup"]{--c:#2dd4bf;--bg:#042f2e}
+@media (max-width:768px){#ntf-toast-stack{left:8px !important;right:8px !important;width:auto !important;top:max(8px,calc(env(safe-area-inset-top) + 8px)) !important}}
+</style>
