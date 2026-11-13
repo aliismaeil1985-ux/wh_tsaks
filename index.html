@@ -2295,7 +2295,7 @@ async function _processOutlookEmail(docId, data){
     }
 
     /* Compose description with email metadata */
-    const desc =
+    const desc = (typeof window._olBuildDesc === 'function') ? window._olBuildDesc(data, _safeBody, unmatched) :
       '📧 من: ' + (data.fromName ? (data.fromName + ' <' + (data.fromEmail||'') + '>') : (data.fromEmail||'—')) + '\n' +
       '📅 تاريخ الاستلام: ' + (data.receivedAt || '—') + '\n' +
       (data.toEmail ? ('إلى: ' + data.toEmail + '\n') : '') +
@@ -18725,7 +18725,7 @@ function askPerm(){ try{ return Notification.requestPermission().then(function(p
 function vib(p){ try{ if(navigator.vibrate) navigator.vibrate(p||[250,120,250,120,450]); }catch(e){} }
 function sysNotify(n,force){
   if(perm()!=='granted') return;
-  var o={body:n.body||'',tag:'wh-'+(n.id||Date.now()),renotify:true,icon:'icon-192.png',badge:'icon-192.png',vibrate:[250,120,250,120,450],data:{taskId:n.taskId||null,url:'./'},lang:'ar',dir:'rtl'};
+  var o={body:n.body||'',tag:(n.taskId?'wh-t-'+n.taskId:'wh-'+(n.id||Date.now())),renotify:true,icon:'icon-192.png',badge:'icon-192.png',vibrate:[250,120,250,120,450],data:{taskId:n.taskId||null,url:'./'},lang:'ar',dir:'rtl'};
   try{
     var r=reg||null;
     if(r&&r.showNotification) return r.showNotification(n.title||T('إشعار جديد','New notification'),o);
@@ -19324,4 +19324,381 @@ window.tmAsg=function(t,u){
     return h+'</div>';
   }catch(e){ return u?empPill(u):'—'; }
 };
+</script>
+
+<!-- ═══════════ Outlook → task: readable description ═══════════ -->
+<script id="tm-olmail-js">
+/* Outlook → task: build a readable description (message first, compact email facts after). */
+(function(){
+  function pad(n){ return (n<10?'0':'')+n; }
+  function fmtWhen(iso){
+    if(!iso) return '';
+    var d=new Date(iso); if(isNaN(d.getTime())) return String(iso);
+    return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' — '+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+  var HDR_FROM=/^\s*\*?\s*(from|من|المرسل)\s*:\s*\S/i;
+  var HDR_NEXT=/^\s*\*?\s*(sent|date|to|cc|subject|أُرسل|أرسل|أرسلت|التاريخ|إلى|الى|نسخة|الموضوع)\s*:/i;
+  var HIST=[
+    /^\s*-{2,}\s*(original message|forwarded message|الرسالة الأصلية|رسالة (مُ|م)عاد توجيهها)/i,
+    /^\s*_{10,}\s*$/,
+    /^\s*on\s.{6,}\swrote:\s*$/i,
+    /^\s*في\s.{6,}\sكتب.{0,40}:\s*$/
+  ];
+  var SIGN=/^\s*(thanks?( you)?( and| &)? ?(best |kind |warm )?regards|best regards|kind regards|warm regards|regards|best wishes|sincerely|cheers|مع (خالص |أطيب )?(التحية|التحيات|الشكر|التقدير)|وتقبلوا|وتفضلوا|شكرا(ً)? (لكم|لك)|تحياتي|مع التحية والتقدير)[\s,.!،]*$/i;
+  var DISC=/^\s*(disclaimer|confidentiality|this (e-?mail|message) (and any|is confidential|contains)|إخلاء (ال)?مسؤولية|تنبيه\s*:|هذه الرسالة (سرية|ومرفقاتها))/i;
+
+  function clean(raw){
+    var t=String(raw||'').replace(/\r/g,'').replace(/ /g,' ').replace(/[​-‏͏⁠﻿]/g,'');
+    var lines=t.split('\n').map(function(l){ return l.replace(/[ \t]+$/,''); });
+    var cut=-1, i, j;
+    for(i=0;i<lines.length && cut<0;i++){
+      var l=lines[i];
+      if(HIST.some(function(r){ return r.test(l); })){ cut=i; break; }
+      if(HDR_FROM.test(l)){
+        for(j=i+1;j<Math.min(lines.length,i+6);j++){ if(HDR_NEXT.test(lines[j])){ cut=i; break; } }
+      }
+    }
+    var trimmedHistory=false;
+    if(cut>0){ lines=lines.slice(0,cut); trimmedHistory=true; }
+    lines=lines.filter(function(l){ return !/^\s*>/.test(l); });
+    for(i=0;i<lines.length;i++){ if(DISC.test(lines[i])){ lines=lines.slice(0,i); break; } }
+    /* signature: keep the sign-off line and the next non-empty line (the name), drop the rest */
+    var content=0;
+    for(i=0;i<lines.length;i++){
+      if(lines[i].trim()) content++;
+      if(content>1 && SIGN.test(lines[i])){
+        for(j=i+1;j<lines.length && !lines[j].trim();j++){}
+        lines=lines.slice(0,Math.min(lines.length,j+1));
+        break;
+      }
+    }
+    var out=lines.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+    return { text: out, trimmedHistory: trimmedHistory };
+  }
+
+  window._olCleanEmailBody=clean;
+  window._olBuildDesc=function(data,body,unmatched){
+    data=data||{};
+    var raw=String(body||''), atts='';
+    var m=raw.match(/\n*📎\s*المرفقات في البريد الأصلي\s*:\s*([^\n]+)\s*$/);
+    if(m){ atts=m[1].trim(); raw=raw.slice(0,m.index); }
+    if(!atts && Array.isArray(data.attachments) && data.attachments.length){
+      atts=data.attachments.map(function(a){ return a&&(a.name||a.fileName)||''; }).filter(Boolean).join('، ');
+    }
+    var c=clean(raw), txt=c.text, MAX=2500, cutLong=false;
+    if(txt.length>MAX){ txt=txt.slice(0,MAX).replace(/\s+\S*$/,'')+' …'; cutLong=true; }
+    if(!txt) txt='(لا يوجد نص في الرسالة — افتح البريد الأصلي من «البريد المرتبط»)';
+    var from=data.fromName?(data.fromName+(data.fromEmail?' · '+data.fromEmail:'')):(data.fromEmail||'—');
+    var f=[];
+    f.push('من: '+from);
+    var when=fmtWhen(data.receivedAt); if(when) f.push('التاريخ: '+when);
+    if(data.toEmail) f.push('إلى: '+data.toEmail);
+    if(atts) f.push('المرفقات (في البريد الأصلي): '+atts);
+    if(c.trimmedHistory) f.push('اختُصرت الرسائل السابقة في سلسلة الرد — النص الكامل في البريد الأصلي.');
+    if(cutLong) f.push('الرسالة طويلة وعُرض جزء منها — النص الكامل في البريد الأصلي.');
+    if(unmatched) f.push('⚠️ لم يتطابق بريد المُرسل مع أي مستخدم في النظام — تم تعيينها للأدمن.');
+    return txt+'\n\n— بيانات البريد —\n'+f.join('\n');
+  };
+})();
+</script>
+
+<!-- ═══════════ Workspace task detail window — compact, clean redesign (styling only) ═══════════ -->
+<style id="tm-twd-css">
+html body #pg-todo #tw-detail{--d-line:var(--tw-line2,#e8edf3);--d-surf:var(--tw-surface,#fff);--d-tx:var(--tw-tx,#0f172a);--d-tx2:var(--tw-tx2,#475569);--d-tx3:var(--tw-tx3,#94a3b8);--d-acc:var(--tw-acc,#2563eb);--d-hov:var(--tw-hov,#f1f5f9)}
+html body #pg-todo #tw-detail.open{border-radius:16px!important;box-shadow:0 24px 60px -18px rgba(15,23,42,.28),0 2px 8px rgba(15,23,42,.06)!important;border:1px solid var(--d-line)!important;background:var(--d-surf)!important;overflow:hidden}
+@media (min-width:900px){html body #pg-todo #tw-detail.open{width:min(680px,calc(100vw - 32px))!important;max-height:min(88vh,820px)!important}}
+
+/* top bar */
+html body #pg-todo #tw-detail .tw-d-top{min-height:0!important;height:48px;padding:0 12px!important;gap:6px!important;background:var(--d-surf)!important;border-bottom:1px solid var(--d-line)!important}
+html body #pg-todo #tw-detail .tw-d-top .tw-ibtn{width:32px!important;height:32px!important;border-radius:8px!important}
+html body #pg-todo #tw-detail .tw-d-top .tw-btn.sm{height:30px!important;padding:0 10px!important;border-radius:8px!important;font-size:12.5px!important;font-weight:600!important;box-shadow:none!important}
+
+/* body */
+html body #pg-todo #tw-detail .tw-d-body{background:var(--d-surf)!important;padding:16px 20px 20px!important;gap:14px!important}
+
+/* title block — no decorative card, no big icon */
+html body #pg-todo #tw-detail .tw-hero{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;min-height:0!important;border-radius:0!important;overflow:visible!important}
+html body #pg-todo #tw-detail .tw-hero::before,html body #pg-todo #tw-detail .tw-hero::after{display:none!important}
+html body #pg-todo #tw-detail .tw-hero-ic{display:none!important}
+html body #pg-todo #tw-detail .tw-d-title{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;gap:8px!important;align-items:flex-start!important;width:100%}
+html body #pg-todo #tw-detail .tw-d-title textarea[data-f=title]{font-size:19px!important;font-weight:700!important;line-height:1.45!important;padding:2px 0!important;min-height:0!important;color:var(--d-tx)!important;letter-spacing:-.005em}
+html body #pg-todo #tw-detail .tw-d-title .tw-chk{margin-top:4px!important;flex:none}
+html body #pg-todo #tw-detail .tw-d-title .tw-star{width:30px!important;height:30px!important;border-radius:8px!important;background:transparent!important;box-shadow:none!important;border:0!important;margin-top:1px!important}
+html body #pg-todo #tw-detail .tw-d-title .tw-star:hover{background:var(--d-hov)!important}
+
+/* summary chips */
+html body #pg-todo #tw-detail .tw-sum{gap:6px!important;margin:-4px 0 0!important;padding:0!important;flex-wrap:wrap}
+html body #pg-todo #tw-detail .tw-sum .tw-pill{height:26px!important;padding:0 10px!important;font-size:12px!important;font-weight:600!important;border-radius:99px!important;box-shadow:none!important}
+
+/* tabs → underline */
+html body #pg-todo #tw-detail .tw-dtabs{display:flex!important;gap:4px!important;padding:0!important;border:0!important;border-bottom:1px solid var(--d-line)!important;border-radius:0!important;background:var(--d-surf)!important;top:-16px!important;margin:0 -20px!important;padding-inline:16px!important}
+html body #pg-todo #tw-detail .tw-dtabs button{flex:0 0 auto!important;height:38px!important;padding:0 10px!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--d-tx2)!important;font-size:13.5px!important;font-weight:500!important;position:relative;gap:6px!important}
+html body #pg-todo #tw-detail .tw-dtabs button .tw-ic{width:14px!important;height:14px!important}
+html body #pg-todo #tw-detail .tw-dtabs button:hover{color:var(--d-tx)!important}
+html body #pg-todo #tw-detail .tw-dtabs button.on{color:var(--d-tx)!important;font-weight:600!important;background:transparent!important}
+html body #pg-todo #tw-detail .tw-dtabs button.on::after{content:"";position:absolute;inset-inline:8px;bottom:-1px;height:2px;border-radius:2px 2px 0 0;background:var(--d-acc)}
+
+/* sections: no tinted panels, quiet headers */
+html body #pg-todo #tw-detail .tw-pnl{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;border-radius:0!important}
+html body #pg-todo #tw-detail .tw-pnl-h{padding:0 2px 6px!important;gap:6px!important;font-size:12.5px!important;min-height:0!important}
+html body #pg-todo #tw-detail .tw-pnl-h b{font-size:12.5px!important;font-weight:600!important;color:var(--d-tx2)!important}
+html body #pg-todo #tw-detail .tw-pnl-i{width:auto!important;height:auto!important;background:none!important;border-radius:0!important;color:var(--d-tx3)!important}
+html body #pg-todo #tw-detail .tw-pnl-i .tw-ic{width:14px!important;height:14px!important}
+html body #pg-todo #tw-detail .tw-pnl>.tw-sec{background:none!important;padding:0 2px 6px!important}
+html body #pg-todo #tw-detail .tw-pnl-lg>.tw-sec .tw-ic{width:14px!important;height:14px!important;padding:0!important;background:none!important;color:var(--d-tx3)!important}
+html body #pg-todo #tw-detail .tw-pnl>.tw-sec b{font-size:12.5px!important;font-weight:600!important;color:var(--d-tx2)!important}
+
+/* cards */
+html body #pg-todo #tw-detail .tw-card{background:var(--d-surf)!important;border:1px solid var(--d-line)!important;border-radius:12px!important;box-shadow:none!important;overflow:hidden}
+
+/* description — shows the whole message */
+html body #pg-todo #tw-detail .tw-ta[data-f=description]{min-height:140px!important;max-height:380px;font-size:14px!important;line-height:1.8!important;padding:12px 14px!important;color:var(--d-tx)!important;resize:vertical;white-space:pre-wrap;overflow-y:auto}
+
+/* property rows: compact label/value grid */
+html body #pg-todo #tw-detail .tw-card .tw-line.tw-lx,html body #pg-todo #tw-detail .tw-card .tw-line{min-height:44px!important;padding:6px 14px!important;gap:10px!important;border-bottom:1px solid var(--d-line)!important;align-items:center!important}
+html body #pg-todo #tw-detail .tw-card .tw-line:last-child{border-bottom:0!important}
+html body #pg-todo #tw-detail .tw-line.tw-lx.due{align-items:center!important}
+html body #pg-todo #tw-detail .tw-lic{width:auto!important;height:auto!important;background:none!important;border-radius:0!important;color:var(--d-tx3)!important}
+html body #pg-todo #tw-detail .tw-lic .tw-ic{width:15px!important;height:15px!important}
+html body #pg-todo #tw-detail .tw-line>.tw-ic{width:15px!important;height:15px!important;color:var(--d-tx3)!important}
+html body #pg-todo #tw-detail .tw-line .k,html body #pg-todo #tw-detail .tw-line.tw-lx .k{min-width:104px!important;width:104px;font-size:13px!important;font-weight:500!important;color:var(--d-tx2)!important}
+html body #pg-todo #tw-detail .tw-line .v,html body #pg-todo #tw-detail .tw-line.tw-lx .v{gap:6px!important;justify-content:flex-start!important}
+html body #pg-todo #tw-detail .tw-dq{display:inline-flex!important;flex:0 0 auto!important;flex-basis:auto!important;width:auto!important;gap:4px!important;margin:0!important}
+html body #pg-todo #tw-detail .tw-chip{height:26px!important;padding:0 9px!important;border-radius:7px!important;font-size:12px!important;font-weight:500!important}
+
+/* inputs & badge selects */
+html body #pg-todo #tw-detail .tw-pf{height:32px!important;padding:0 10px!important;border-radius:8px!important;background:var(--d-surf)!important;border:1px solid var(--d-line)!important;gap:6px!important}
+html body #pg-todo #tw-detail .tw-pf input{height:30px!important;font-size:13px!important;font-weight:500!important}
+html body #pg-todo #tw-detail .tw-pf:hover{border-color:color-mix(in srgb,var(--d-tx3) 60%,var(--d-line))!important}
+html body #pg-todo #tw-detail .tw-bsel{height:32px!important;padding:0 8px 0 10px!important;border-radius:8px!important;background:var(--d-surf)!important;border:1px solid var(--d-line)!important;gap:6px!important}
+html body #pg-todo #tw-detail .tw-bsel b{height:22px!important;padding:0 9px!important;font-size:12px!important;font-weight:600!important}
+html body #pg-todo #tw-detail .tw-line select,html body #pg-todo #tw-detail .tw-line input[type=text]{font-size:13px!important}
+
+/* steps */
+html body #pg-todo #tw-detail .tw-steps .tw-step{min-height:42px!important;padding:3px 12px!important}
+html body #pg-todo #tw-detail .tw-steps .tw-step input.t{font-size:13.5px!important}
+
+/* footer */
+html body #pg-todo #tw-detail .tw-d-foot{padding:10px 16px!important;gap:8px!important;background:var(--d-surf)!important;border-top:1px solid var(--d-line)!important;min-height:0!important}
+html body #pg-todo #tw-detail .tw-fcr{font-size:12px!important;color:var(--d-tx3)!important;gap:5px!important}
+html body #pg-todo #tw-detail .tw-fbtns{gap:4px!important}
+html body #pg-todo #tw-detail .tw-fbtn{height:32px!important;padding:0 10px!important;border-radius:8px!important;font-size:12.5px!important;font-weight:500!important;box-shadow:none!important;border:1px solid transparent!important;background:transparent!important;color:var(--d-tx2)!important;gap:5px!important}
+html body #pg-todo #tw-detail .tw-fbtn:hover{background:var(--d-hov)!important;color:var(--d-tx)!important}
+html body #pg-todo #tw-detail .tw-fbtn .tw-ic{width:14px!important;height:14px!important;color:var(--d-tx3)!important}
+html body #pg-todo #tw-detail .tw-fbtn b{height:18px!important;min-width:18px;padding:0 5px!important;border-radius:99px!important;font-size:11px!important;font-weight:600!important;background:var(--d-hov)!important;color:var(--d-tx2)!important;display:inline-flex;align-items:center;justify-content:center}
+html body #pg-todo #tw-detail .tw-fbtn.on{color:var(--d-acc)!important}
+html body #pg-todo #tw-detail .tw-fsave{height:32px!important;padding:0 16px!important;border-radius:8px!important;font-size:13px!important;font-weight:600!important;box-shadow:0 1px 2px rgba(37,99,235,.25)!important;gap:6px!important}
+
+/* dark */
+html.dark body #pg-todo #tw-detail.open{box-shadow:0 24px 60px -18px rgba(0,0,0,.6)!important}
+
+/* phones */
+@media (max-width:640px){
+  html body #pg-todo #tw-detail .tw-d-body{padding:14px 14px 18px!important;gap:12px!important}
+  html body #pg-todo #tw-detail .tw-dtabs{margin:0 -14px!important;padding-inline:10px!important}
+  html body #pg-todo #tw-detail .tw-d-title textarea[data-f=title]{font-size:17px!important}
+  html body #pg-todo #tw-detail .tw-line .k,html body #pg-todo #tw-detail .tw-line.tw-lx .k{min-width:84px!important;width:84px}
+  html body #pg-todo #tw-detail .tw-fbtn span{display:none!important}
+  html body #pg-todo #tw-detail .tw-fcr{display:none!important}
+}
+</style>
+<script id="tm-twd-js">
+(function(){
+  /* grow the description box to fit its text (up to 380px) whenever the window renders or the text changes */
+  function fit(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=Math.min(Math.max(ta.scrollHeight+2,140),380)+'px'; }
+  function hook(){
+    var d=document.getElementById('tw-detail'); if(!d||d.__tmFit) return; d.__tmFit=1;
+    new MutationObserver(function(){ fit(d.querySelector('textarea[data-f=description]')); }).observe(d,{childList:true});
+    d.addEventListener('input',function(e){ if(e.target&&e.target.matches&&e.target.matches('textarea[data-f=description]')) fit(e.target); });
+  }
+  hook(); var iv=setInterval(function(){ hook(); var d=document.getElementById('tw-detail'); if(d&&d.__tmFit) clearInterval(iv); },1500);
+})();
+</script>
+
+<!-- ═══════════ Phone push notifications (Web Push) — app-style alerts even when the platform is closed ═══════════ -->
+<style id="tm-webpush-css">
+#wp-banner{position:fixed;z-index:9550;inset-inline:12px;bottom:calc(84px + env(safe-area-inset-bottom,0px));max-width:440px;margin-inline:auto;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:var(--card,#fff);color:var(--text,#0f172a);border:1px solid var(--border,#e5eaf2);box-shadow:0 18px 40px -14px rgba(15,23,42,.35);font-size:13.5px;line-height:1.55;animation:wpIn .25s ease}
+@keyframes wpIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (min-width:900px){#wp-banner{bottom:20px;inset-inline-start:auto;inset-inline-end:20px;margin:0}}
+#wp-banner .wp-ic{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:rgba(79,70,229,.1);color:#4f46e5}
+#wp-banner .wp-tx{flex:1;min-width:0}
+#wp-banner .wp-tx b{display:block;font-size:14px;font-weight:700;margin-bottom:1px}
+#wp-banner .wp-tx span{color:var(--tx2,#475569);font-size:12.5px}
+#wp-banner .wp-acts{display:flex;flex-direction:column;gap:6px;flex:none}
+#wp-banner button{height:32px;padding:0 14px;border-radius:8px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid transparent;white-space:nowrap}
+#wp-banner .wp-yes{background:#4f46e5;color:#fff}
+#wp-banner .wp-yes:hover{background:#4338ca}
+#wp-banner .wp-no{background:transparent;color:var(--tx2,#475569);border-color:var(--border,#e5eaf2)}
+html.dark #wp-banner{background:#0f172a;border-color:rgba(255,255,255,.12)}
+html.dark #wp-banner .wp-ic{background:rgba(129,140,248,.16);color:#a5b4fc}
+</style>
+<script id="tm-webpush-js">
+(function(){
+  if(window.WebPush) return;
+  var VAPID_PUBLIC='BHrzpOpu6t6f4Aqoh-m3-WgB5JN2bDRKj_2_ivvByFmkPqLAiTMtH7GAE6mi8u1HUfp6ABmd9dz4jFI2Eeui-Xo';
+  var LIVE='https://wh-tsaks.pages.dev';
+  var onSite=/^https:$/.test(location.protocol)&&/(^|\.)wh-tsaks\.pages\.dev$/.test(location.hostname);
+  var API=(onSite?location.origin:LIVE)+'/api/push';
+  var ua=navigator.userAgent||'';
+  var IOS=/iphone|ipad|ipod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  function en(){ try{ return typeof LANG!=='undefined'&&LANG==='en'; }catch(e){ return false; } }
+  function L(a,e){ return en()?e:a; }
+  function standalone(){ try{ return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true; }catch(e){ return false; } }
+  function supported(){ return !!(window.isSecureContext&&'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window); }
+  function me(){ try{ return (typeof CU!=='undefined'&&CU)?CU:null; }catch(e){ return null; } }
+  function userRec(id){ try{ return (DB.users||[]).find(function(u){ return String(u.id)===String(id); })||null; }catch(e){ return null; } }
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  function b64uToU8(s){ s=String(s).replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='='; var b=atob(s), o=new Uint8Array(b.length); for(var i=0;i<b.length;i++) o[i]=b.charCodeAt(i); return o; }
+  function sameKey(buf){ try{ var a=new Uint8Array(buf), b=b64uToU8(VAPID_PUBLIC); if(a.length!==b.length) return false; for(var i=0;i<a.length;i++) if(a[i]!==b[i]) return false; return true; }catch(e){ return false; } }
+  function devLabel(){ return /iphone|ipod/i.test(ua)?'iPhone':/ipad/i.test(ua)||IOS?'iPad':/android/i.test(ua)?'Android':/windows/i.test(ua)?'Windows':/mac/i.test(ua)?'Mac':'Device'; }
+
+  function getReg(){
+    return navigator.serviceWorker.getRegistration().then(function(r){ return r||navigator.serviceWorker.register('sw.js'); })
+      .then(function(r){ return r.active?r:navigator.serviceWorker.ready; });
+  }
+  function store(uid,rec){
+    var u=userRec(uid); if(!u) return;
+    var list=Array.isArray(u.webPush)?u.webPush.slice():[];
+    var i=-1; list.forEach(function(x,j){ if(x&&x.endpoint===rec.endpoint) i=j; });
+    if(i>=0&&list[i].keys&&list[i].keys.p256dh===rec.keys.p256dh&&list[i].keys.auth===rec.keys.auth) return;
+    if(i>=0) list[i]=rec; else list.push(rec);
+    while(list.length>5) list.shift();
+    u.webPush=list; try{ var c=me(); if(c&&c!==u&&String(c.id)===String(uid)) c.webPush=list; }catch(e){}
+    try{ saveDB(); }catch(e){ console.warn('[webpush] save',e); }
+  }
+  /* subscribe this device and remember it on the user's record (interactive = may ask for permission) */
+  function enable(interactive){
+    if(!supported()) return Promise.resolve({ok:false,reason:IOS&&!standalone()?'ios-home':'unsupported'});
+    var u=me(); if(!u) return Promise.resolve({ok:false,reason:'nologin'});
+    var perm=Notification.permission;
+    var ask=perm==='granted'?Promise.resolve('granted'):(interactive&&perm==='default'?Notification.requestPermission():Promise.resolve(perm));
+    return ask.then(function(p){
+      if(p!=='granted') return {ok:false,reason:p};
+      return getReg().then(function(reg){
+        return reg.pushManager.getSubscription().then(function(sub){
+          if(sub&&sub.options&&sub.options.applicationServerKey&&!sameKey(sub.options.applicationServerKey)) return sub.unsubscribe().then(function(){ return null; });
+          return sub;
+        }).then(function(sub){
+          return sub||reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uToU8(VAPID_PUBLIC)});
+        }).then(function(sub){
+          var j=sub.toJSON(); store(u.id,{endpoint:j.endpoint,keys:j.keys,dev:devLabel(),at:new Date().toISOString().slice(0,10)});
+          lsSet('wp_ok_'+u.id,j.endpoint);
+          return {ok:true};
+        });
+      });
+    }).catch(function(e){ console.warn('[webpush]',e); return {ok:false,reason:'error',error:String(e&&e.message||e)}; });
+  }
+  function post(subs,msg){
+    return fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({subs:subs},msg))})
+      .then(function(r){ return r.json().catch(function(){ return {ok:false,status:r.status}; }); });
+  }
+  function prune(u,res){
+    if(!u||!res||!Array.isArray(res.results)) return;
+    var dead=res.results.filter(function(x){ return x.status===404||x.status===410; }).map(function(x){ return x.endpoint; });
+    if(!dead.length) return;
+    u.webPush=(u.webPush||[]).filter(function(s){ return dead.indexOf(s.endpoint)<0; });
+    try{ saveDB(); }catch(e){}
+  }
+  var sent={};
+  function sendTo(uid,title,body,tid){
+    try{
+      var m=me(); if(uid==null||(m&&String(uid)===String(m.id))) return;
+      var k=uid+'|'+(tid||title); if(sent[k]&&Date.now()-sent[k]<90000) return; sent[k]=Date.now();
+      var u=userRec(uid); if(!u||u.frozen||u.pushOff||!Array.isArray(u.webPush)||!u.webPush.length) return;
+      post(u.webPush,{title:String(title||'').slice(0,120),body:String(body||'').slice(0,400),url:'/'+(tid?'#task='+encodeURIComponent(tid):''),tag:tid?'wh-t-'+tid:'',taskId:tid||null})
+        .then(function(res){ prune(u,res); }).catch(function(e){ console.warn('[webpush]',e); });
+    }catch(e){ console.warn('[webpush]',e); }
+  }
+  function test(){
+    var u=me(); if(!u) return Promise.resolve({ok:false,reason:'nologin'});
+    var rec=userRec(u.id)||u, subs=(rec.webPush||[]).filter(function(s){ return s.endpoint===lsGet('wp_ok_'+u.id); });
+    if(!subs.length) return Promise.resolve({ok:false,reason:'not-enabled'});
+    return post(subs,{title:L('✅ الإشعارات تعمل','✅ Notifications are working'),body:L('ستصلك تنبيهات المهام على هذا الجهاز حتى والمنصة مغلقة.','Task alerts will reach this device even when the platform is closed.'),url:'/',tag:'wh-test',test:true});
+  }
+
+  /* hook every notification the platform already sends to another user */
+  (function hook(n){
+    var done=0;
+    try{ var o=window._ntfWriteForUser; if(typeof o==='function'&&!o.__wp){ var w=function(uid,type,title,body,tid){ var r=o.apply(this,arguments); try{ sendTo(uid,title,body,tid); }catch(e){} return r; }; w.__wp=1; w.__xp=o.__xp; window._ntfWriteForUser=w; } if(window._ntfWriteForUser&&window._ntfWriteForUser.__wp) done++; }catch(e){}
+    try{ var s=window.sendTelegram; if(typeof s==='function'&&!s.__wp){ var w2=function(ids,data){ var r=s.apply(this,arguments); try{ var t=(data&&data.title)||''; (Array.isArray(ids)?ids:[]).forEach(function(id){ sendTo(id,'📌 '+L('مهمة جديدة مُسندة إليك','New task assigned to you'),t+(data&&data.deadline?'\n📅 '+data.deadline:''),(data&&data.id)||t); }); }catch(e){} return r; }; w2.__wp=1; w2.__xp=s.__xp; window.sendTelegram=w2; } if(window.sendTelegram&&window.sendTelegram.__wp) done++; }catch(e){}
+    if(done<2&&n<60) setTimeout(function(){ hook(n+1); },700);
+  })(0);
+
+  /* activation prompt */
+  function hideBanner(){ var b=document.getElementById('wp-banner'); if(b) b.remove(); }
+  function banner(kind){
+    if(document.getElementById('wp-banner')) return;
+    var b=document.createElement('div'); b.id='wp-banner'; b.setAttribute('role','dialog'); b.dir=en()?'ltr':'rtl';
+    var bell='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+    var txt=kind==='ios'
+      ?'<b>'+L('فعّل إشعارات المهام على آيفون','Enable task alerts on iPhone')+'</b><span>'+L('اضغط زر المشاركة ⬆︎ في Safari ثم «إضافة إلى الشاشة الرئيسية»، وافتح المنصة من أيقونتها.','Tap Share ⬆︎ in Safari, then “Add to Home Screen”, and open the platform from its icon.')+'</span>'
+      :'<b>'+L('فعّل إشعارات الجوال','Turn on phone alerts')+'</b><span>'+L('تصلك المهام الجديدة والتذكيرات فورًا حتى والمنصة مغلقة.','Get new tasks and reminders instantly, even when the platform is closed.')+'</span>';
+    b.innerHTML='<span class="wp-ic">'+bell+'</span><span class="wp-tx">'+txt+'</span><span class="wp-acts">'+(kind==='ios'?'':'<button type="button" class="wp-yes">'+L('تفعيل','Enable')+'</button>')+'<button type="button" class="wp-no">'+(kind==='ios'?L('حسنًا','Got it'):L('لاحقًا','Later'))+'</button></span>';
+    document.body.appendChild(b);
+    b.querySelector('.wp-no').onclick=function(){ lsSet('wp_dismiss',String(Date.now())); hideBanner(); };
+    var y=b.querySelector('.wp-yes');
+    if(y) y.onclick=function(){
+      y.disabled=true; y.textContent=L('جارٍ التفعيل…','Enabling…');
+      enable(true).then(function(r){
+        hideBanner();
+        var nt=(typeof notif==='function')?notif:function(){};
+        if(r.ok){ nt(L('✅ تم تفعيل إشعارات الجوال على هذا الجهاز','✅ Phone alerts enabled on this device')); setTimeout(function(){ test(); },1200); }
+        else if(r.reason==='denied') nt(L('⚠️ الإشعارات محظورة لهذا الموقع — فعّلها من إعدادات المتصفح','⚠️ Notifications are blocked for this site — allow them in browser settings'),'err');
+        else if(r.reason!=='default') nt(L('⚠️ تعذّر تفعيل الإشعارات على هذا الجهاز','⚠️ Could not enable notifications on this device'),'err');
+      });
+    };
+  }
+  function maybePrompt(){
+    var u=me(); if(!u) return;
+    var d=+(lsGet('wp_dismiss')||0); if(d&&Date.now()-d<7*864e5) return;
+    if(!supported()&&IOS&&!standalone()) banner('ios');
+  }
+  /* ── automatic permission request, tied to the user's own taps (browsers require a tap) ── */
+  function asks(){ try{ return (JSON.parse(lsGet('wp_asks')||'[]')||[]).filter(function(t){ return Date.now()-t<7*864e5; }); }catch(e){ return []; } }
+  function canAsk(){ return supported()&&Notification.permission==='default'&&asks().length<2; }
+  function afterGrant(){
+    var n=0;(function wait(){
+      if(!me()){ if(++n<30) setTimeout(wait,1000); return; }
+      enable(false).then(function(r){
+        if(!r.ok) return;
+        var nt=(typeof notif==='function')?notif:function(){};
+        nt(L('✅ تم تفعيل إشعارات الجوال على هذا الجهاز','✅ Phone alerts enabled on this device'));
+        setTimeout(function(){ test(); },1500);
+      });
+    })();
+  }
+  function askNow(){
+    if(!canAsk()) return;
+    var a=asks(); a.push(Date.now()); lsSet('wp_asks',JSON.stringify(a));
+    try{ Promise.resolve(Notification.requestPermission()).then(function(p){ if(p==='granted') afterGrant(); }); }catch(e){}
+  }
+  var inAppAsked=false;
+  function isLoginTap(t){
+    if(!t||!t.closest) return false;
+    if(t.closest('#login-btn,[onclick*="doLogin"],[onclick*="authLogin"]')) return true;
+    var q=t.closest('#ql'); return !!(q&&t.closest('button'));
+  }
+  document.addEventListener('click',function(e){
+    var t=e.target;
+    if(isLoginTap(t)){ askNow(); return; }
+    if(me()&&!inAppAsked&&canAsk()&&!(t&&t.closest&&t.closest('#pg-login,#wp-banner'))){ inAppAsked=true; askNow(); }
+  },true);
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter') return;
+    var t=e.target; if(t&&(t.id==='L-email'||t.id==='L-pass')) askNow();
+  },true);
+  var lastUid=null;
+  function tick(){
+    var u=me(); if(!u){ lastUid=null; hideBanner(); return; }
+    if(supported()&&Notification.permission==='granted') enable(false);
+    if(String(u.id)!==lastUid){ lastUid=String(u.id); setTimeout(maybePrompt,4000); }
+  }
+  setInterval(function(){ var u=me(), id=u?String(u.id):null; if(id!==lastUid) tick(); },2000);
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden&&me()) tick(); });
+  /* an existing “enable notifications” button in the app also subscribes the device */
+  (function wrapPWA(n){ try{ if(window.PWA&&PWA.askPerm&&!PWA.askPerm.__wp){ var a=PWA.askPerm; PWA.askPerm=function(){ var r=a.apply(this,arguments); Promise.resolve(r).then(function(p){ if(p==='granted') enable(false); }); return r; }; PWA.askPerm.__wp=1; return; } }catch(e){} if(n<30) setTimeout(function(){ wrapPWA(n+1); },700); })(0);
+
+  window.WebPush={enable:function(){ return enable(true); },test:test,sendTo:sendTo,supported:supported,status:function(){ return {supported:supported(),permission:('Notification' in window)?Notification.permission:'unsupported',ios:IOS,standalone:standalone(),api:API}; }};
+})();
 </script>
