@@ -14890,25 +14890,58 @@ function aiApi(){ return ((location.protocol==='https:'&&/(^|\.)wh-tsaks\.pages\
 function aiErrMsg(e){ var m={'not-configured':L('خدمة التحليل غير مفعّلة بعد — أضف Workers AI من إعدادات Cloudflare','AI analysis is not set up yet'),'quota':L('انتهت حصة التحليل المجانية لليوم — حاول غدًا','Today\'s free AI quota is used up — try tomorrow'),'origin':L('التحليل يعمل من موقع المنصة فقط','AI analysis works only on the platform site'),'no-title':L('اكتب عنوانًا أوضح للمهمة ثم حلّلها','Write a clearer title first')}; return m[e]||L('تعذّر التحليل الآن — حاول مرة أخرى','Could not analyze right now — try again'); }
 function aiAnalyze(t){
   if(!t) return; var id=t.id; AI[id]={loading:true}; renderDetail();
-  fetch(aiApi(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t.title||'',description:t.description||'',department:t.department||''})})
+  var ln=lang()==='en'?'en':'ar';
+  fetch(aiApi(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t.title||'',description:t.description||'',department:t.department||'',lang:ln})})
     .then(function(r){ return r.json().catch(function(){ return {ok:false,error:'http-'+r.status}; }); })
-    .then(function(d){ AI[id]=(d&&d.ok)?{goal:d.goal||'',items:(d.items||[]).map(function(x){ return {text:x,on:true}; })}:{err:aiErrMsg(d&&d.error)}; if(String(S.sel)===String(id)) renderDetail(); })
+    .then(function(d){ AI[id]=(d&&d.ok)?{goal:d.goal||'',items:(d.items||[]).map(function(x){ return {text:x,on:true}; }),lang:d.lang==='en'?'en':(d.lang==='ar'?'ar':ln),cache:{},dirty:false}:{err:aiErrMsg(d&&d.error)}; if(String(S.sel)===String(id)) renderDetail(); })
     .catch(function(){ AI[id]={err:aiErrMsg('network')}; if(String(S.sel)===String(id)) renderDetail(); });
+}
+/* Switch the suggestion between Arabic and English. Each language is kept after the first translation;
+   editing the text marks it changed so the next switch translates the edited version. */
+function aiLang(t,target){
+  aiSync(); if(!t) return; var id=t.id, s=AI[id];
+  if(!s||!s.items||s.busy||target!=='ar'&&target!=='en'||(s.lang||'ar')===target) return;
+  var from=s.lang||'ar', cur={goal:s.goal||'',texts:s.items.map(function(x){ return x.text; })};
+  function apply(v){ s.goal=v.goal||''; s.items.forEach(function(x,i){ if(v.texts[i]!=null) x.text=v.texts[i]; }); s.lang=target; s.dirty=false; }
+  var c=s.cache&&s.cache[target];
+  if(!s.dirty&&c&&c.texts.length===s.items.length){ s.cache[from]=cur; apply(c); renderDetail(); return; }
+  var idx=[]; cur.texts.forEach(function(x,i){ if(String(x||'').trim()) idx.push(i); });
+  s.busy=target; s.terr=''; renderDetail();
+  fetch(aiApi(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'translate',target:target,goal:cur.goal,items:idx.map(function(i){ return cur.texts[i]; })})})
+    .then(function(r){ return r.json().catch(function(){ return {ok:false,error:'http-'+r.status}; }); })
+    .then(function(d){
+      if(AI[id]!==s) return; s.busy=false;
+      if(d&&d.ok&&Array.isArray(d.items)&&d.items.length===idx.length){
+        var tx=cur.texts.slice(); idx.forEach(function(i,k){ tx[i]=d.items[k]; });
+        s.cache={}; s.cache[from]=cur; s.cache[target]={goal:cur.goal?(d.goal||''):'',texts:tx}; apply(s.cache[target]);
+      } else s.terr=aiErrMsg(d&&d.error);
+      if(String(S.sel)===String(id)) renderDetail();
+    })
+    .catch(function(){ if(AI[id]!==s) return; s.busy=false; s.terr=aiErrMsg('network'); if(String(S.sel)===String(id)) renderDetail(); });
 }
 function aiSync(){
   var d=$id('tw-detail'), s=S.sel!=null&&AI[S.sel]; if(!d||!s||!s.items) return;
   var g=d.querySelector('.tm-ai-goal'); if(g) s.goal=g.value;
   d.querySelectorAll('.tm-ai-it').forEach(function(row){ var i=+row.getAttribute('data-i'); if(!s.items[i]) return; var c=row.querySelector('.aic'), x=row.querySelector('.ait'); s.items[i].on=!!(c&&c.checked); if(x) s.items[i].text=x.value; });
 }
-document.addEventListener('input',function(e){ if(e.target&&e.target.closest&&e.target.closest('.tm-ai')) aiSync(); },true);
+function aiFit(el){ if(!el) return; el.style.height='auto'; el.style.height=(el.scrollHeight+2)+'px'; }
+function aiFitAll(){ var d=$id('tw-detail'); if(d) d.querySelectorAll('.tm-ai .ait,.tm-ai .tm-ai-goal').forEach(aiFit); }
+document.addEventListener('input',function(e){ var x=e.target; if(!(x&&x.closest&&x.closest('.tm-ai'))) return; aiSync(); if(x.classList.contains('ait')||x.classList.contains('tm-ai-goal')){ aiFit(x); var s=S.sel!=null&&AI[S.sel]; if(s) s.dirty=true; } },true);
 document.addEventListener('change',function(e){ if(e.target&&e.target.closest&&e.target.closest('.tm-ai')) aiSync(); },true);
+document.addEventListener('keydown',function(e){ if(e.key==='Enter'&&e.target&&e.target.classList&&e.target.classList.contains('ait')) e.preventDefault(); },true);
 function aiHtml(t){
   var s=AI[t.id]; if(!s) return '';
   if(s.loading) return '<div class="tm-ai"><div class="tm-ai-h"><span class="tm-ai-spark">✨</span>'+esc(L('جارٍ تحليل المهمة بالذكاء الاصطناعي…','Analyzing the task…'))+'</div><div class="tm-ai-sk"><i></i><i></i><i></i></div></div>';
   if(s.err) return '<div class="tm-ai err"><div class="tm-ai-h">'+esc(s.err)+'</div><div class="tm-ai-act"><button class="tw-btn sm" data-act="aian">'+esc(L('إعادة المحاولة','Retry'))+'</button><button class="tw-btn sm" data-act="aiclr">'+esc(L('إغلاق','Close'))+'</button></div></div>';
-  return '<div class="tm-ai"><div class="tm-ai-h"><span class="tm-ai-spark">✨</span>'+esc(L('اقتراح التحليل — راجعه وعدّله قبل الإضافة','AI suggestion — review and edit before adding'))+'</div>'+
-    (s.goal?'<label class="tm-ai-l">'+esc(L('الهدف','Goal'))+'</label><textarea class="tm-ai-goal" rows="2" maxlength="300">'+esc(s.goal)+'</textarea>':'')+
-    (s.items.length?'<label class="tm-ai-l">'+esc(L('العناصر المطلوبة — تُضاف كخطوات قابلة للتعديل','Required items — added as editable steps'))+'</label><div class="tm-ai-items">'+s.items.map(function(x,i){ return '<div class="tm-ai-it" data-i="'+i+'"><input type="checkbox" class="aic"'+(x.on?' checked':'')+' aria-label="'+esc(L('تحديد','Select'))+'"><input type="text" class="ait" value="'+esc(x.text)+'" maxlength="200"></div>'; }).join('')+'</div>':'')+
+  setTimeout(aiFitAll,0);
+  var sl=s.lang||'ar', dir=sl==='en'?'ltr':'rtl';
+  var lgb=function(k,lbl){ var on=(s.busy?s.busy===k:sl===k); return '<button type="button" data-act="ailang" data-l="'+k+'" class="'+(on?'on':'')+'" aria-pressed="'+(on?'true':'false')+'"'+(s.busy?' disabled':'')+'>'+lbl+'</button>'; };
+  return '<div class="tm-ai'+(s.busy?' busy':'')+'"><div class="tm-ai-h"><span class="tm-ai-spark">✨</span><span class="tm-ai-ht">'+esc(L('اقتراح التحليل — راجعه وعدّله قبل الإضافة','AI suggestion — review and edit before adding'))+'</span>'+
+    '<span class="tm-ai-lang" role="group" aria-label="'+esc(L('لغة الاقتراح','Suggestion language'))+'">'+lgb('ar','العربية')+lgb('en','English')+'</span></div>'+
+    (s.busy?'<div class="tm-ai-note">'+esc(s.busy==='en'?L('جارٍ الترجمة إلى الإنجليزية…','Translating to English…'):L('جارٍ الترجمة إلى العربية…','Translating to Arabic…'))+'</div>':'')+
+    (s.terr?'<div class="tm-ai-note err">'+esc(s.terr)+'</div>':'')+
+    (s.goal?'<label class="tm-ai-l">'+esc(L('الهدف','Goal'))+'</label><textarea class="tm-ai-goal" dir="'+dir+'" rows="1" maxlength="300">'+esc(s.goal)+'</textarea>':'')+
+    (s.items.length?'<label class="tm-ai-l">'+esc(L('العناصر المطلوبة — تُضاف كخطوات قابلة للتعديل','Required items — added as editable steps'))+'</label><div class="tm-ai-items">'+s.items.map(function(x,i){ return '<div class="tm-ai-it" data-i="'+i+'"><input type="checkbox" class="aic"'+(x.on?' checked':'')+' aria-label="'+esc(L('تحديد','Select'))+'"><textarea class="ait" dir="'+dir+'" rows="1" maxlength="200">'+esc(x.text)+'</textarea></div>'; }).join('')+'</div>':'')+
     '<div class="tm-ai-act">'+(s.items.length?'<button class="tw-btn sm pri" data-act="aiadd">'+esc(L('إضافة المحدد إلى الخطوات','Add selected to steps'))+'</button>':'')+(s.goal?'<button class="tw-btn sm" data-act="aigoal">'+esc(L('إضافة الهدف إلى الوصف','Add goal to description'))+'</button>':'')+'<button class="tw-btn sm" data-act="aian">'+esc(L('إعادة التحليل','Re-analyze'))+'</button><button class="tw-btn sm" data-act="aiclr">'+esc(L('تجاهل','Dismiss'))+'</button></div></div>';
 }
 function renderDetail0(soft){
@@ -15126,9 +15159,10 @@ function handleAct(act,a,e){
     case 'dstar': if(cur){ toggleStar(cur); refreshLight(); renderDetail(); } return true;
     case 'dmyday': if(cur){ toggleMyDay(cur); refreshLight(); renderDetail(); } return true;
     case 'aian': if(cur){ aiAnalyze(cur); } return true;
+    case 'ailang': if(cur){ aiLang(cur,a.getAttribute('data-l')); } return true;
     case 'aiclr': if(cur){ delete AI[cur.id]; renderDetail(); } return true;
-    case 'aiadd': if(cur){ aiSync(); var sA=AI[cur.id]; if(sA&&sA.items){ var addA=sA.items.filter(function(x){ return x.on&&String(x.text||'').trim(); }); if(addA.length){ var tsA=Date.now().toString(36); cur.steps=stepsOf(cur).concat(addA.map(function(x,i){ return {id:'s'+tsA+i+Math.random().toString(36).slice(2,4),text:String(x.text).trim().slice(0,200),done:false}; })); syncProgress(cur); commit(); toast(L('✅ أُضيفت ','✅ Added ')+addA.length+(addA.length===1?L(' خطوة',' step'):(addA.length<=10?L(' خطوات',' steps'):L(' خطوة',' steps')))); } sA.items=sA.items.filter(function(x){ return !(x.on&&String(x.text||'').trim()); }); if(!sA.items.length&&!sA.goal) delete AI[cur.id]; renderDetail(); renderMain(true); } } return true;
-    case 'aigoal': if(cur){ aiSync(); var sG=AI[cur.id]; if(sG&&String(sG.goal||'').trim()){ cur.description=(String(cur.description||'').trim()?String(cur.description).trim()+'\n\n':'')+L('الهدف: ','Goal: ')+String(sG.goal).trim(); sG.goal=''; if(!sG.items.length) delete AI[cur.id]; commit(); renderDetail(); } } return true;
+    case 'aiadd': if(cur){ aiSync(); var sA=AI[cur.id]; if(sA&&sA.items){ var addA=sA.items.filter(function(x){ return x.on&&String(x.text||'').trim(); }); if(addA.length){ var tsA=Date.now().toString(36); cur.steps=stepsOf(cur).concat(addA.map(function(x,i){ return {id:'s'+tsA+i+Math.random().toString(36).slice(2,4),text:String(x.text).replace(/\s+/g,' ').trim().slice(0,200),done:false}; })); syncProgress(cur); commit(); toast(L('✅ أُضيفت ','✅ Added ')+addA.length+(addA.length===1?L(' خطوة',' step'):(addA.length<=10?L(' خطوات',' steps'):L(' خطوة',' steps')))); } sA.cache={}; sA.items=sA.items.filter(function(x){ return !(x.on&&String(x.text||'').trim()); }); if(!sA.items.length&&!sA.goal) delete AI[cur.id]; renderDetail(); renderMain(true); } } return true;
+    case 'aigoal': if(cur){ aiSync(); var sG=AI[cur.id]; if(sG&&String(sG.goal||'').trim()){ cur.description=(String(cur.description||'').trim()?String(cur.description).trim()+'\n\n':'')+L('الهدف: ','Goal: ')+String(sG.goal).trim(); sG.goal=''; sG.cache={}; if(!sG.items.length) delete AI[cur.id]; commit(); renderDetail(); } } return true;
     case 'remindclear': if(cur){ mapBy(cur,'reminderBy',null,true); renderDetail(); renderMain(true); } return true;
     case 'remindpre': if(cur){ presetRemind(cur,a.getAttribute('data-v')); renderMain(true); } return true;
     case 'stepdone': if(cur){ var sid=a.closest('.tw-step').getAttribute('data-sid'); var s=stepsOf(cur).find(function(x){ return x.id===sid; }); if(s){ s.done=!s.done; syncProgress(cur); commit(); renderDetail(); renderMain(true); } } return true;
@@ -19999,7 +20033,20 @@ html body #pg-todo #tw-detail .tm-ai-goal{width:100%;border:1px solid var(--d-li
 html body #pg-todo #tw-detail .tm-ai-items{display:flex;flex-direction:column;gap:5px}
 html body #pg-todo #tw-detail .tm-ai-it{display:flex;align-items:center;gap:8px;background:var(--d-surf);border:1px solid var(--d-line);border-radius:8px;padding:2px 10px}
 html body #pg-todo #tw-detail .tm-ai-it .aic{width:16px;height:16px;flex:none;accent-color:#6d28d9;margin:0}
-html body #pg-todo #tw-detail .tm-ai-it .ait{flex:1;min-width:0;border:0!important;background:transparent!important;box-shadow:none!important;height:34px;padding:0!important;font:inherit;font-size:13.5px!important;color:var(--d-tx)!important;outline:none}
+html body #pg-todo #tw-detail .tm-ai-it .ait{flex:1;min-width:0;border:0!important;background:transparent!important;box-shadow:none!important;height:auto;min-height:24px!important;padding:6px 0!important;margin:0;font:inherit;font-size:13.5px!important;line-height:1.6!important;color:var(--d-tx)!important;outline:none;resize:none!important;overflow:hidden;white-space:pre-wrap;word-break:break-word;field-sizing:content}
+html body #pg-todo #tw-detail .tm-ai-it{align-items:flex-start!important}
+html body #pg-todo #tw-detail .tm-ai-it .aic{margin-top:10px!important}
+html body #pg-todo #tw-detail .tm-ai-goal{resize:none!important;overflow:hidden;min-height:0!important;field-sizing:content}
+html body #pg-todo #tw-detail .tm-ai-ht{flex:1;min-width:0}
+html body #pg-todo #tw-detail .tm-ai-lang{display:inline-flex;flex:none;padding:2px;gap:2px;border:1px solid rgba(124,58,237,.25);border-radius:99px;background:var(--d-surf)}
+html body #pg-todo #tw-detail .tm-ai-lang button{height:26px;padding:0 12px;border:0;border-radius:99px;background:transparent;color:var(--d-tx3);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+html body #pg-todo #tw-detail .tm-ai-lang button.on{background:rgba(124,58,237,.12);color:#6d28d9}
+html body #pg-todo #tw-detail .tm-ai-lang button[disabled]{cursor:progress}
+html body #pg-todo #tw-detail .tm-ai-note{font-size:12px;color:#6d28d9}
+html body #pg-todo #tw-detail .tm-ai-note.err{color:#b91c1c}
+html body #pg-todo #tw-detail .tm-ai.busy .tm-ai-items,html body #pg-todo #tw-detail .tm-ai.busy .tm-ai-goal{opacity:.55;pointer-events:none}
+html.dark body #pg-todo #tw-detail .tm-ai-lang button.on,html.dark body #pg-todo #tw-detail .tm-ai-note{color:#c4b5fd}
+@media (max-width:640px){html body #pg-todo #tw-detail .tm-ai-h{flex-wrap:wrap}}
 html body #pg-todo #tw-detail .tm-ai-it:has(.aic:not(:checked)) .ait{color:var(--d-tx3)!important;text-decoration:line-through}
 html body #pg-todo #tw-detail .tm-ai-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 html body #pg-todo #tw-detail .tm-ai-act .tw-btn{height:30px!important;border-radius:8px!important;font-size:12.5px!important}
