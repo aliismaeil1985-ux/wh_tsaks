@@ -14923,12 +14923,13 @@ function renderDetail0(soft){
   /* التنظيم والإسناد */
   var ln=listOf(t), lns=listNames();
   OG+='<div class="tw-card">'+
-   '<div class="tw-line">'+ic('list',18)+'<span class="k">'+esc(L('القائمة','List'))+'</span><span class="v"><select data-f="list"><option value="">'+esc(L('— بدون —','— None —'))+'</option>'+lns.map(function(n){ return '<option value="'+esc(n)+'"'+(ln===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'<option value="__new">＋ '+esc(L('قائمة جديدة…','New list…'))+'</option></select></span></div>'+
-   '<div class="tw-line">'+ic('brief',18)+'<span class="k">'+esc(L('الإدارة','Department'))+'</span><span class="v"><select data-f="department"'+(core?'':' disabled')+'>'+(t.department&&departments().indexOf(t.department)<0?'<option selected>'+esc(t.department)+'</option>':'')+departments().map(function(x){ var tv=trVal(x,trM); return '<option value="'+esc(x)+'"'+(t.department===x?' selected':'')+tv.a+'>'+esc(tv.v)+'</option>'; }).join('')+'</select></span></div>';
+   '<div class="tw-line">'+ic('list',18)+'<span class="k">'+esc(L('القائمة','List'))+'</span><span class="v"><select data-f="list"><option value="">'+esc(L('— بدون —','— None —'))+'</option>'+lns.map(function(n){ return '<option value="'+esc(n)+'"'+(ln===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'<option value="__new">＋ '+esc(L('قائمة جديدة…','New list…'))+'</option></select></span></div>';
+  var OGD='<div class="tw-line">'+ic('brief',18)+'<span class="k">'+esc(L('الإدارة','Department'))+'</span><span class="v"><select data-f="department"'+(core?'':' disabled')+'>'+(t.department&&departments().indexOf(t.department)<0?'<option selected>'+esc(t.department)+'</option>':'')+departments().map(function(x){ var tv=trVal(x,trM); return '<option value="'+esc(x)+'"'+(t.department===x?' selected':'')+tv.a+'>'+esc(tv.v)+'</option>'; }).join('')+'</select></span></div>';
+  var OGA='';
   if(isMgr()){
-    OG+='<details class="tw-line" style="display:block;padding:0"><summary style="list-style:none;display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 12px;cursor:pointer">'+ic('users',18)+'<span class="k" style="min-width:78px;color:var(--tw-tx2)">'+esc(L('المكلّفون','Assignees'))+'</span><span class="v" style="flex:1;display:flex;justify-content:flex-end">'+as.slice(0,4).map(function(id){ var x; try{ x=getUser(id); }catch(e){} return '<span class="tw-asn"><span class="tw-av" style="background:'+avCol(id)+'">'+esc(x?userCode(x):'?')+'</span><b>'+(x?uNameH(x):'')+'</b></span>'; }).join('')+(as.length>4?'<span class="tw-more">+'+(as.length-4)+'</span>':'')+(as.length?'':'<span style="color:var(--tw-tx3)">'+esc(L('غير محدد','None'))+'</span>')+'</span>'+ic('chev',14,'tw-chv')+'</summary><div class="tw-asg ap-in">'+asgPickerHtml(as,'detail')+'</div></details>';
+    OGA+='<details class="tw-line" style="display:block;padding:0"><summary style="list-style:none;display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 12px;cursor:pointer">'+ic('users',18)+'<span class="k" style="min-width:78px;color:var(--tw-tx2)">'+esc(L('المكلّفون','Assignees'))+'</span><span class="v" style="flex:1;display:flex;justify-content:flex-end">'+as.slice(0,4).map(function(id){ var x; try{ x=getUser(id); }catch(e){} return '<span class="tw-asn"><span class="tw-av" style="background:'+avCol(id)+'">'+esc(x?userCode(x):'?')+'</span><b>'+(x?uNameH(x):'')+'</b></span>'; }).join('')+(as.length>4?'<span class="tw-more">+'+(as.length-4)+'</span>':'')+(as.length?'':'<span style="color:var(--tw-tx3)">'+esc(L('غير محدد','None'))+'</span>')+'</span>'+ic('chev',14,'tw-chv')+'</summary><div class="tw-asg ap-in">'+asgPickerHtml(as,'detail')+'</div></details>';
   } else {
-    OG+='<div class="tw-line">'+ic('users',18)+'<span class="k">'+esc(L('المكلّفون','Assignees'))+'</span><span class="v tw-asv">'+(as.map(function(id){ var x; try{ x=getUser(id); }catch(e){} return x?'<span class="tw-asn"><span class="tw-av" style="background:'+avCol(id)+'">'+esc(userCode(x))+'</span><b>'+uNameH(x)+'</b></span>':''; }).join('')||'—')+'</span></div>';
+    OGA+='<div class="tw-line">'+ic('users',18)+'<span class="k">'+esc(L('المكلّفون','Assignees'))+'</span><span class="v tw-asv">'+(as.map(function(id){ var x; try{ x=getUser(id); }catch(e){} return x?'<span class="tw-asn"><span class="tw-av" style="background:'+avCol(id)+'">'+esc(userCode(x))+'</span><b>'+uNameH(x)+'</b></span>':''; }).join('')||'—')+'</span></div>';
   }
   OG+='</div>';
   /* بانتظار */
@@ -14950,8 +14951,8 @@ function renderDetail0(soft){
   var nLg=lgParse(t.notes).length, nAt0=(t.attachments||[]).length, tab=S.dTab==='sub'?'sub':'main';
   h+='<div class="tw-dtabs" role="tablist"><button role="tab" class="'+(tab==='main'?'on':'')+'" data-act="dtab" data-v="main">'+ic('note',15)+esc(L('العناصر الأساسية','Essentials'))+'</button><button role="tab" class="'+(tab==='sub'?'on':'')+'" data-act="dtab" data-v="sub">'+ic('list',15)+esc(L('العناصر الفرعية','More details'))+((nLg+nAt0)?'<span class="tw-dtc">'+(nLg+nAt0)+'</span>':'')+'</button></div>';
   if(tab==='main'){
+    h+=PNL('planned','#7c3aed',L('التفاصيل','Details'),'',SC.replace('<div class="tw-card">','<div class="tw-card tm-props">').replace(/<\/div>$/,OGA+OGD+'</div>'));
     h+=PNL('note','#2563eb',L('الوصف','Description'),'',DS);
-    h+=PNL('planned','#7c3aed',L('الحالة والمواعيد','Status & dates'),'',SC);
     h+=PNL('tasks','#0891b2',L('الخطوات','Steps'),steps.length?'<span class="tw-sec-prog"><i style="width:'+pct+'%"></i></span><small>'+sdone+'/'+steps.length+'</small>':'',SH);
   } else {
     h+=PNL('users','#0d9488',L('الإسناد والتصنيف','Assignment'),'',OG.replace(/<\/div>$/,'')+WT.replace(/^<div class="tw-card">/,'').replace(/<\/div>$/,'')+'</div>');
@@ -19522,7 +19523,7 @@ html.dark body #pg-todo #tw-detail.open{box-shadow:0 24px 60px -18px rgba(0,0,0,
 <script id="tm-twd-js">
 (function(){
   /* grow the description box to fit its text (up to 380px) whenever the window renders or the text changes */
-  function fit(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=Math.min(Math.max(ta.scrollHeight+2,140),380)+'px'; }
+  function fit(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=(ta.value?Math.min(Math.max(ta.scrollHeight+2,72),380):72)+'px'; }
   function hook(){
     var d=document.getElementById('tw-detail'); if(!d||d.__tmFit) return; d.__tmFit=1;
     new MutationObserver(function(){ fit(d.querySelector('textarea[data-f=description]')); }).observe(d,{childList:true});
@@ -19811,5 +19812,51 @@ html.dark #pg-todo .tm-row .tw-due.soon{color:#93c5fd}
   #pg-todo .tw-focus{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:10px}
   #pg-todo .tw-focus::-webkit-scrollbar{display:none}
   #pg-todo .tw-fchip{flex:none}
+}
+</style>
+
+<!-- ═══════════ Task detail window — clear order (details first, no duplicates) ═══════════ -->
+<style id="tm-twd2-css">
+/* summary chips under the title repeated the fields below — keep only the action buttons (My Day, recurrence) */
+html body #pg-todo #tw-detail .tw-sum>span.tw-pill{display:none!important}
+html body #pg-todo #tw-detail .tw-sum{margin:-6px 0 0!important}
+html body #pg-todo #tw-detail .tw-sum:not(:has(button)){display:none!important}
+
+/* details panel: status → priority → due → assignees → department → start */
+html body #pg-todo #tw-detail .tm-props{display:flex!important;flex-direction:column}
+html body #pg-todo #tw-detail .tm-props>:nth-child(4){order:1}
+html body #pg-todo #tw-detail .tm-props>:nth-child(3){order:2}
+html body #pg-todo #tw-detail .tm-props>:nth-child(1){order:3}
+html body #pg-todo #tw-detail .tm-props>:nth-child(5){order:4}
+html body #pg-todo #tw-detail .tm-props>:nth-child(6){order:5}
+html body #pg-todo #tw-detail .tm-props>:nth-child(2){order:6}
+html body #pg-todo #tw-detail .tm-props>*{border-bottom:1px solid var(--d-line)!important}
+html body #pg-todo #tw-detail .tm-props>:nth-child(2){border-bottom:0!important}
+html body #pg-todo #tw-detail .tm-props .tw-line{min-height:46px!important}
+html body #pg-todo #tw-detail .tm-props details.tw-line>summary{min-height:46px!important;padding:6px 14px!important;gap:10px!important}
+html body #pg-todo #tw-detail .tm-props details.tw-line>summary .k{min-width:104px!important;width:104px;font-size:13px!important;font-weight:500!important;color:var(--d-tx2)!important}
+html body #pg-todo #tw-detail .tm-props details.tw-line>summary .v{justify-content:flex-start!important}
+html body #pg-todo #tw-detail .tm-props details.tw-line>summary>.tw-ic:first-child{width:15px;height:15px;color:var(--d-tx3)}
+html body #pg-todo #tw-detail .tm-props .tw-asn{display:inline-flex;align-items:center;gap:6px;margin-inline-end:8px}
+html body #pg-todo #tw-detail .tm-props .tw-asn .tw-av{width:26px;height:26px;font-size:10.5px}
+html body #pg-todo #tw-detail .tm-props .tw-asn b{font-size:13px;font-weight:600}
+html body #pg-todo #tw-detail .tm-props select[data-f=department]{height:32px;border:1px solid var(--d-line)!important;border-radius:8px!important;padding:0 10px!important;background:var(--d-surf)!important;font-size:13px!important;width:auto!important;min-width:180px;max-width:min(280px,100%)!important;flex:0 1 auto!important}
+/* quick due chips only when no due date is set */
+html body #pg-todo #tw-detail .tw-line.due:has(input[data-f=deadline]:not([value=""])) .tw-dq{display:none!important}
+/* empty start date: quiet */
+html body #pg-todo #tw-detail .tm-props .tw-pf.pf-empty{opacity:.75}
+
+/* description: small when empty, grows with text */
+html body #pg-todo #tw-detail .tw-ta[data-f=description]{min-height:72px!important}
+html body #pg-todo #tw-detail .tw-ta[data-f=description]:placeholder-shown{height:72px!important;min-height:72px!important}
+@media (max-width:640px){
+  html body #pg-todo #tw-detail .tm-props .tw-line,html body #pg-todo #tw-detail .tm-props details.tw-line>summary{flex-direction:row!important;flex-wrap:nowrap!important;align-items:center!important;gap:8px!important;padding:6px 10px!important;min-height:44px!important}
+  html body #pg-todo #tw-detail .tm-props .tw-line .k,html body #pg-todo #tw-detail .tm-props details.tw-line>summary .k{min-width:72px!important;width:72px!important;flex:none!important;font-size:12.5px!important;margin:0!important}
+  html body #pg-todo #tw-detail .tm-props .tw-line .v,html body #pg-todo #tw-detail .tm-props details.tw-line>summary .v{flex:1 1 0!important;min-width:0!important;width:auto!important;flex-wrap:wrap!important;gap:6px!important}
+  html body #pg-todo #tw-detail .tm-props .tw-lic,html body #pg-todo #tw-detail .tm-props .tw-line>.tw-ic,html body #pg-todo #tw-detail .tm-props details.tw-line>summary>.tw-ic:first-child{display:none!important}
+  html body #pg-todo #tw-detail .tm-props .tw-asn{margin-inline-end:4px}
+  html body #pg-todo #tw-detail .tm-props .tw-asn b{font-size:12px!important;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis}
+  html body #pg-todo #tw-detail .tm-props .tw-pf{height:32px!important;padding:0 8px!important}
+  html body #pg-todo #tw-detail .tm-props select[data-f=department]{min-width:0!important;width:100%!important}
 }
 </style>
