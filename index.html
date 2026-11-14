@@ -14883,6 +14883,34 @@ function dueRel(t){
   var txt=n===0?L('اليوم','Today'):n===1?L('غدًا','Tomorrow'):n>1?L('بعد ','In ')+n+L(' أيام',' days'):L('متأخرة ','Overdue ')+(-n)+L(' يوم',' d');
   return '<small class="tw-rel'+(n<0?' od':n<=1?' soon':'')+'">'+esc(txt)+'</small>';
 }
+/* ═══ AI task analysis (open-source models on Cloudflare Workers AI via /api/ai) ═══ */
+var AI={}, AI_AUTO={};
+TW._ai=AI;
+function aiApi(){ return ((location.protocol==='https:'&&/(^|\.)wh-tsaks\.pages\.dev$/.test(location.hostname))?'':'https://wh-tsaks.pages.dev')+'/api/ai'; }
+function aiErrMsg(e){ var m={'not-configured':L('خدمة التحليل غير مفعّلة بعد — أضف Workers AI من إعدادات Cloudflare','AI analysis is not set up yet'),'quota':L('انتهت حصة التحليل المجانية لليوم — حاول غدًا','Today\'s free AI quota is used up — try tomorrow'),'origin':L('التحليل يعمل من موقع المنصة فقط','AI analysis works only on the platform site'),'no-title':L('اكتب عنوانًا أوضح للمهمة ثم حلّلها','Write a clearer title first')}; return m[e]||L('تعذّر التحليل الآن — حاول مرة أخرى','Could not analyze right now — try again'); }
+function aiAnalyze(t){
+  if(!t) return; var id=t.id; AI[id]={loading:true}; renderDetail();
+  fetch(aiApi(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t.title||'',description:t.description||'',department:t.department||''})})
+    .then(function(r){ return r.json().catch(function(){ return {ok:false,error:'http-'+r.status}; }); })
+    .then(function(d){ AI[id]=(d&&d.ok)?{goal:d.goal||'',items:(d.items||[]).map(function(x){ return {text:x,on:true}; })}:{err:aiErrMsg(d&&d.error)}; if(String(S.sel)===String(id)) renderDetail(); })
+    .catch(function(){ AI[id]={err:aiErrMsg('network')}; if(String(S.sel)===String(id)) renderDetail(); });
+}
+function aiSync(){
+  var d=$id('tw-detail'), s=S.sel!=null&&AI[S.sel]; if(!d||!s||!s.items) return;
+  var g=d.querySelector('.tm-ai-goal'); if(g) s.goal=g.value;
+  d.querySelectorAll('.tm-ai-it').forEach(function(row){ var i=+row.getAttribute('data-i'); if(!s.items[i]) return; var c=row.querySelector('.aic'), x=row.querySelector('.ait'); s.items[i].on=!!(c&&c.checked); if(x) s.items[i].text=x.value; });
+}
+document.addEventListener('input',function(e){ if(e.target&&e.target.closest&&e.target.closest('.tm-ai')) aiSync(); },true);
+document.addEventListener('change',function(e){ if(e.target&&e.target.closest&&e.target.closest('.tm-ai')) aiSync(); },true);
+function aiHtml(t){
+  var s=AI[t.id]; if(!s) return '';
+  if(s.loading) return '<div class="tm-ai"><div class="tm-ai-h"><span class="tm-ai-spark">✨</span>'+esc(L('جارٍ تحليل المهمة بالذكاء الاصطناعي…','Analyzing the task…'))+'</div><div class="tm-ai-sk"><i></i><i></i><i></i></div></div>';
+  if(s.err) return '<div class="tm-ai err"><div class="tm-ai-h">'+esc(s.err)+'</div><div class="tm-ai-act"><button class="tw-btn sm" data-act="aian">'+esc(L('إعادة المحاولة','Retry'))+'</button><button class="tw-btn sm" data-act="aiclr">'+esc(L('إغلاق','Close'))+'</button></div></div>';
+  return '<div class="tm-ai"><div class="tm-ai-h"><span class="tm-ai-spark">✨</span>'+esc(L('اقتراح التحليل — راجعه وعدّله قبل الإضافة','AI suggestion — review and edit before adding'))+'</div>'+
+    (s.goal?'<label class="tm-ai-l">'+esc(L('الهدف','Goal'))+'</label><textarea class="tm-ai-goal" rows="2" maxlength="300">'+esc(s.goal)+'</textarea>':'')+
+    (s.items.length?'<label class="tm-ai-l">'+esc(L('العناصر المطلوبة — تُضاف كخطوات قابلة للتعديل','Required items — added as editable steps'))+'</label><div class="tm-ai-items">'+s.items.map(function(x,i){ return '<div class="tm-ai-it" data-i="'+i+'"><input type="checkbox" class="aic"'+(x.on?' checked':'')+' aria-label="'+esc(L('تحديد','Select'))+'"><input type="text" class="ait" value="'+esc(x.text)+'" maxlength="200"></div>'; }).join('')+'</div>':'')+
+    '<div class="tm-ai-act">'+(s.items.length?'<button class="tw-btn sm pri" data-act="aiadd">'+esc(L('إضافة المحدد إلى الخطوات','Add selected to steps'))+'</button>':'')+(s.goal?'<button class="tw-btn sm" data-act="aigoal">'+esc(L('إضافة الهدف إلى الوصف','Add goal to description'))+'</button>':'')+'<button class="tw-btn sm" data-act="aian">'+esc(L('إعادة التحليل','Re-analyze'))+'</button><button class="tw-btn sm" data-act="aiclr">'+esc(L('تجاهل','Dismiss'))+'</button></div></div>';
+}
 function renderDetail0(soft){
   var d=$id('tw-detail'); if(!d) return;
   if(S.view==='email' && OL.mail.sel){ d.innerHTML=OL.detailHtml(); d.classList.add('open'); return; }
@@ -14897,6 +14925,9 @@ function renderDetail0(soft){
     (t.status==='completed'?'<button class="tw-btn sm" data-act="archive" title="'+esc(L('نقل إلى الأرشيف','Move to archive'))+'">'+ic('folder',14)+esc(L('أرشفة','Archive'))+'</button>':'')+
     (canDelete(t)?'<button class="tw-ibtn" data-act="delete" title="'+esc(L('حذف','Delete'))+'" style="color:var(--tw-red)">'+ic('trash',18)+'</button>':'')+'</div>';
   h+='<div class="tw-d-body" data-id="'+esc(t.id)+'">';
+  var bk=done?'done':(t.priority||'medium');
+  h+='<div class="tm-band b-'+bk+'">';
+  h+='<div class="tm-meta">'+ic('brief',13)+'<span>'+esc(t.department||L('بدون إدارة','No department'))+'</span>'+(t.serial?'<i>/</i><span>'+esc(t.serial)+'</span>':'')+'</div>';
   h+='<div class="tw-hero"><div class="tw-d-title"><button class="tw-chk'+(done?' done':'')+'" data-act="ddone" style="margin-top:3px"><i>'+ic('check',12).replace('<circle cx="12" cy="12" r="9"/>','')+'</i></button>'+(function(){ var x=trVal(t.title,trM); return '<textarea data-f="title" rows="1" maxlength="200" aria-label="title"'+(trM?' readonly class="trd"':'')+x.a+'>'+esc(x.v)+'</textarea>'; })()+'<button class="tw-star'+(isImportant(t)?' on':'')+'" data-act="dstar" style="margin-top:2px">'+ic('star',20)+'</button></div><span class="tw-hero-ic" aria-hidden="true">'+ic('planned',30)+'</span></div>';
   if(trM) h+='<div class="tw-trbar2">'+ic('tr',15)+'<span>'+esc(trM==='en'?L('معروضة بالإنجليزية — ترجمة آلية','Shown in English — machine translation'):L('معروضة بالعربية — ترجمة آلية','Shown in Arabic — machine translation'))+'</span><button class="tw-btn sm" data-act="trtask">'+ic('edit',13)+esc(L('عرض الأصل للتعديل','Show original to edit'))+'</button></div>';
   /* أُزيل سطر الرمز التسلسلي واسم المنشئ من أعلى البطاقة */
@@ -14940,6 +14971,7 @@ function renderDetail0(soft){
   DS+='<div class="tw-card"><textarea class="tw-ta'+(trM?' trd':'')+'" data-f="description" placeholder="'+esc(L('أضف وصفًا للمهمة…','Add a description…'))+'"'+(function(){ var x=trVal(t.description||'',trM); return (trM?' readonly':'')+x.a+'>'+esc(x.v); })()+'</textarea></div>';
   var PNL=function(icn,col,title,extra,inner){ return '<section class="tw-pnl" style="--pc:'+col+'"><div class="tw-pnl-h"><span class="tw-pnl-i">'+ic(icn,16)+'</span><b>'+esc(title)+'</b><span class="sp"></span>'+(extra||'')+'</div>'+inner+'</section>'; };
   var sk=stKey(t), pc=PRI[t.priority||'medium']||PRI.medium, pct=steps.length?Math.round(sdone/steps.length*100):0;
+  h+='<div class="tm-chips">'+badgeSel('status',['pending','in_progress','completed','postponed','cancelled'],st,staLbl,function(p){ return STC[p]||'#64748b'; },false)+badgeSel('priority',['urgent','high','medium','low'],t.priority||'medium',priLbl,function(p){ return PRI[p].c; },!core)+(as.length?'<span class="tm-ach">'+as.slice(0,3).map(function(id){ var x; try{ x=getUser(id); }catch(e){} return '<span class="tw-av" style="background:'+avCol(id)+'">'+esc(x?userCode(x):'?')+'</span>'; }).join('')+'<b>'+(function(){ try{ return uNameH(getUser(as[0])); }catch(e){ return ''; } })()+(as.length>1?' <small>+'+(as.length-1)+'</small>':'')+'</b></span>':'')+'</div>';
   h+='<div class="tw-sum">'+
     '<span class="tw-pill sk-'+sk+'"><i></i>'+esc(skLbl(sk))+'</span>'+
     '<span class="tw-pill" style="--sk:'+pc.c+'"><i></i>'+esc(priLbl(t.priority||'medium'))+'</span>'+
@@ -14948,12 +14980,19 @@ function renderDetail0(soft){
     (rcOf(t)&&rcOf(t).on?'<button class="tw-pill plain rc-pill" data-act="drecur">'+ic('repeat',13)+esc(rcSummary(rcOf(t)))+'</button>':'')+
     '<button class="tw-pill btn'+(inMyDay(t)?' on':'')+'" data-act="dmyday">'+ic('sun',13)+esc(inMyDay(t)?L('في يومي','In My Day'):L('إضافة إلى يومي','Add to My Day'))+'</button>'+
   '</div>';
+  h+='</div>';
   var nLg=lgParse(t.notes).length, nAt0=(t.attachments||[]).length, tab=S.dTab==='sub'?'sub':'main';
   h+='<div class="tw-dtabs" role="tablist"><button role="tab" class="'+(tab==='main'?'on':'')+'" data-act="dtab" data-v="main">'+ic('note',15)+esc(L('العناصر الأساسية','Essentials'))+'</button><button role="tab" class="'+(tab==='sub'?'on':'')+'" data-act="dtab" data-v="sub">'+ic('list',15)+esc(L('العناصر الفرعية','More details'))+((nLg+nAt0)?'<span class="tw-dtc">'+(nLg+nAt0)+'</span>':'')+'</button></div>';
   if(tab==='main'){
-    h+=PNL('planned','#7c3aed',L('التفاصيل','Details'),'',SC.replace('<div class="tw-card">','<div class="tw-card tm-props">').replace(/<\/div>$/,OGA+OGD+'</div>'));
-    h+=PNL('note','#2563eb',L('الوصف','Description'),'',DS);
+    var TB='';(function(){ var d0=dl(t); if(!d0) return; var s0=t.startDate||t.createdAt||todayStr(); var A=parseYmd(s0),B=parseYmd(d0),N=parseYmd(todayStr()); var tot=Math.max(1,Math.round((B-A)/864e5)), el=Math.round((N-A)/864e5), left=Math.round((B-N)/864e5); var pcT=Math.max(0,Math.min(100,Math.round(el/tot*100))), cl='', tx; if(done){ cl='ok'; tx=L('مكتملة','Done'); pcT=100; } else if(left<0){ cl='od'; tx=L('متأخرة ','Late ')+(-left)+L(' يوم',' d'); pcT=100; } else if(left===0){ cl='td'; tx=L('مستحقة اليوم','Due today'); } else { cl=left<=2?'soon':''; tx=L('متبقي ','')+left+L(' يوم',' days left'); } TB='<div class="tm-time '+cl+'"><div class="tm-tl"><b>'+esc(tx)+'</b><small>'+esc(fmtDate(d0))+'</small></div><div class="tm-bar"><i style="width:'+pcT+'%"></i></div></div>'; })();
+    var dT=trVal(t.title,trM).v;
+    var DESC2=DS.replace('<div class="tw-card">','<div class="tw-card tm-desc"><div class="tm-dtitle">'+esc(dT)+'</div>').replace(esc(L('أضف وصفًا للمهمة…','Add a description…')),esc(L('+ أضف شرحًا تحت العنوان…','+ Add details under the title…')));
+    h+='<div class="tm-cols"><div class="tm-colmain">';
+    if(!AI[t.id] && !AI_AUTO[t.id] && !stepsOf(t).length && !done && t.createdAt===todayStr() && canCore(t) && String(t.title||'').trim().length>=6){ AI_AUTO[t.id]=1; setTimeout(function(){ if(String(S.sel)===String(t.id)&&!AI[t.id]) aiAnalyze(t); },400); }
+    h+=PNL('note','#2563eb',L('الوصف','Description'),'<button class="tw-btn sm tm-aibtn" data-act="aian"'+(AI[t.id]&&AI[t.id].loading?' disabled':'')+'><span class="tm-ai-spark">✨</span>'+esc(L('تحليل بالذكاء الاصطناعي','Analyze with AI'))+'</button>',DESC2);
+    h+=aiHtml(t);
     h+=PNL('tasks','#0891b2',L('الخطوات','Steps'),steps.length?'<span class="tw-sec-prog"><i style="width:'+pct+'%"></i></span><small>'+sdone+'/'+steps.length+'</small>':'',SH);
+    h+='</div><aside class="tm-rail">'+TB+SC.replace('<div class="tw-card">','<div class="tw-card tm-props tm-railcard">').replace(/<\/div>$/,OGA+OGD+'</div>')+'</aside></div>';
   } else {
     h+=PNL('users','#0d9488',L('الإسناد والتصنيف','Assignment'),'',OG.replace(/<\/div>$/,'')+WT.replace(/^<div class="tw-card">/,'').replace(/<\/div>$/,'')+'</div>');
     h+=PNL('bell','#d97706',L('التذكير','Reminder'),'',RM);
@@ -15086,6 +15125,10 @@ function handleAct(act,a,e){
     case 'ddone': if(cur){ toggleDone(cur); refreshLight(); renderDetail(); } return true;
     case 'dstar': if(cur){ toggleStar(cur); refreshLight(); renderDetail(); } return true;
     case 'dmyday': if(cur){ toggleMyDay(cur); refreshLight(); renderDetail(); } return true;
+    case 'aian': if(cur){ aiAnalyze(cur); } return true;
+    case 'aiclr': if(cur){ delete AI[cur.id]; renderDetail(); } return true;
+    case 'aiadd': if(cur){ aiSync(); var sA=AI[cur.id]; if(sA&&sA.items){ var addA=sA.items.filter(function(x){ return x.on&&String(x.text||'').trim(); }); if(addA.length){ var tsA=Date.now().toString(36); cur.steps=stepsOf(cur).concat(addA.map(function(x,i){ return {id:'s'+tsA+i+Math.random().toString(36).slice(2,4),text:String(x.text).trim().slice(0,200),done:false}; })); syncProgress(cur); commit(); toast(L('✅ أُضيفت ','✅ Added ')+addA.length+(addA.length===1?L(' خطوة',' step'):(addA.length<=10?L(' خطوات',' steps'):L(' خطوة',' steps')))); } sA.items=sA.items.filter(function(x){ return !(x.on&&String(x.text||'').trim()); }); if(!sA.items.length&&!sA.goal) delete AI[cur.id]; renderDetail(); renderMain(true); } } return true;
+    case 'aigoal': if(cur){ aiSync(); var sG=AI[cur.id]; if(sG&&String(sG.goal||'').trim()){ cur.description=(String(cur.description||'').trim()?String(cur.description).trim()+'\n\n':'')+L('الهدف: ','Goal: ')+String(sG.goal).trim(); sG.goal=''; if(!sG.items.length) delete AI[cur.id]; commit(); renderDetail(); } } return true;
     case 'remindclear': if(cur){ mapBy(cur,'reminderBy',null,true); renderDetail(); renderMain(true); } return true;
     case 'remindpre': if(cur){ presetRemind(cur,a.getAttribute('data-v')); renderMain(true); } return true;
     case 'stepdone': if(cur){ var sid=a.closest('.tw-step').getAttribute('data-sid'); var s=stepsOf(cur).find(function(x){ return x.id===sid; }); if(s){ s.done=!s.done; syncProgress(cur); commit(); renderDetail(); renderMain(true); } } return true;
@@ -19523,7 +19566,7 @@ html.dark body #pg-todo #tw-detail.open{box-shadow:0 24px 60px -18px rgba(0,0,0,
 <script id="tm-twd-js">
 (function(){
   /* grow the description box to fit its text (up to 380px) whenever the window renders or the text changes */
-  function fit(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=(ta.value?Math.min(Math.max(ta.scrollHeight+2,72),380):72)+'px'; }
+  function fit(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=(ta.value?Math.min(Math.max(ta.scrollHeight+2,40),380):40)+'px'; }
   function hook(){
     var d=document.getElementById('tw-detail'); if(!d||d.__tmFit) return; d.__tmFit=1;
     new MutationObserver(function(){ fit(d.querySelector('textarea[data-f=description]')); }).observe(d,{childList:true});
@@ -19859,4 +19902,112 @@ html body #pg-todo #tw-detail .tw-ta[data-f=description]:placeholder-shown{heigh
   html body #pg-todo #tw-detail .tm-props .tw-pf{height:32px!important;padding:0 8px!important}
   html body #pg-todo #tw-detail .tm-props select[data-f=department]{min-width:0!important;width:100%!important}
 }
+</style>
+
+<!-- ═══════════ Task detail window v6 — priority band, title copy in description, two columns with time bar ═══════════ -->
+<style id="tm-twd3-css">
+html body #pg-todo #tw-detail{--bd-bg:#eff6ff;--bd-ln:#bfdbfe;--bd-tx:#1d4ed8;--dt-c:#1d4ed8}
+html body #pg-todo #tw-detail:has(.tm-band.b-urgent){--bd-bg:#fff1f2;--bd-ln:#fecdd3;--bd-tx:#be123c}
+html body #pg-todo #tw-detail:has(.tm-band.b-high){--bd-bg:#fff7ed;--bd-ln:#fed7aa;--bd-tx:#c2410c}
+html body #pg-todo #tw-detail:has(.tm-band.b-done){--bd-bg:#ecfdf5;--bd-ln:#a7f3d0;--bd-tx:#047857}
+html.dark body #pg-todo #tw-detail{--bd-bg:rgba(59,130,246,.10);--bd-ln:rgba(59,130,246,.28);--bd-tx:#93c5fd;--dt-c:#93c5fd}
+html.dark body #pg-todo #tw-detail:has(.tm-band.b-urgent){--bd-bg:rgba(244,63,94,.10);--bd-ln:rgba(244,63,94,.30);--bd-tx:#fda4af}
+html.dark body #pg-todo #tw-detail:has(.tm-band.b-high){--bd-bg:rgba(249,115,22,.10);--bd-ln:rgba(249,115,22,.30);--bd-tx:#fdba74}
+html.dark body #pg-todo #tw-detail:has(.tm-band.b-done){--bd-bg:rgba(16,185,129,.10);--bd-ln:rgba(16,185,129,.30);--bd-tx:#6ee7b7}
+
+@media (min-width:900px){html body #pg-todo #tw-detail.open{width:min(880px,calc(100vw - 32px))!important}}
+
+html body #pg-todo #tw-detail:has(.tm-band) .tw-d-top{background:var(--bd-bg)!important;border-bottom:0!important}
+html body #pg-todo #tw-detail .tm-band{background:var(--bd-bg);margin:-16px -20px 2px;padding:0 20px 14px;border-bottom:1px solid var(--bd-ln)}
+html body #pg-todo #tw-detail .tm-meta{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--bd-tx);margin:0 0 6px;padding-inline-start:38px}
+html body #pg-todo #tw-detail .tm-meta i{font-style:normal;opacity:.45}
+html body #pg-todo #tw-detail .tm-meta .tw-ic{width:13px;height:13px}
+html body #pg-todo #tw-detail .tm-band .tw-d-title textarea[data-f=title]{font-family:'IBM Plex Sans Arabic','Inter',sans-serif!important;font-size:21px!important;font-weight:700!important;line-height:1.5!important;color:var(--d-tx)!important}
+html body #pg-todo #tw-detail .tm-band .tw-d-title .tw-chk{border-color:var(--bd-tx)}
+html body #pg-todo #tw-detail .tm-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 0;padding-inline-start:38px}
+html body #pg-todo #tw-detail .tm-chips .tw-bsel{height:30px!important;border-radius:99px!important;background:var(--d-surf)!important;border:1px solid var(--bd-ln)!important;padding:0 8px 0 4px!important}
+html body #pg-todo #tw-detail .tm-chips .tw-bsel b{height:22px!important}
+html body #pg-todo #tw-detail .tm-ach{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px 0 4px;border-radius:99px;background:var(--d-surf);border:1px solid var(--bd-ln);font-size:12.5px;color:var(--d-tx)}
+html body #pg-todo #tw-detail .tm-ach .tw-av{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-size:9.5px;font-weight:600;margin-inline-start:-7px;box-shadow:0 0 0 2px var(--d-surf)}
+html body #pg-todo #tw-detail .tm-ach .tw-av:first-child{margin-inline-start:0}
+html body #pg-todo #tw-detail .tm-ach b{font-weight:600}
+html body #pg-todo #tw-detail .tm-ach small{color:var(--d-tx3);font-weight:500}
+html body #pg-todo #tw-detail .tm-band .tw-sum{margin:8px 0 0!important;padding-inline-start:38px}
+html body #pg-todo #tw-detail .tm-band .tw-sum .tw-pill.btn{background:var(--d-surf)!important;border-color:var(--bd-ln)!important}
+
+html body #pg-todo #tw-detail .tm-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:900px){html body #pg-todo #tw-detail .tm-cols{grid-template-columns:minmax(0,1fr) 230px}}
+html body #pg-todo #tw-detail .tm-colmain{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+html body #pg-todo #tw-detail .tm-desc{padding:12px 14px 8px!important}
+html body #pg-todo #tw-detail .tm-desc .tm-dtitle{font-family:'Noto Naskh Arabic','Amiri','Scheherazade New',serif!important;font-size:17px;font-weight:600;line-height:1.85;color:var(--dt-c);word-break:break-word}
+html body #pg-todo #tw-detail .tm-desc .tw-ta[data-f=description]{padding:4px 0 2px!important;min-height:40px!important;border:0!important;background:transparent!important;color:var(--d-tx2)!important}
+html body #pg-todo #tw-detail .tm-desc .tw-ta[data-f=description]:placeholder-shown{height:40px!important;min-height:40px!important}
+html body #pg-todo #tw-detail .tm-desc .tw-ta[data-f=description]::placeholder{color:var(--d-acc)!important;opacity:.85}
+
+html body #pg-todo #tw-detail .tm-rail{background:var(--d-hov);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:2px}
+html.dark body #pg-todo #tw-detail .tm-rail{background:rgba(255,255,255,.03)}
+html body #pg-todo #tw-detail .tm-time{padding:2px 2px 12px;border-bottom:1px solid var(--d-line)}
+html body #pg-todo #tw-detail .tm-tl{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+html body #pg-todo #tw-detail .tm-tl b{font-size:13.5px;font-weight:700;color:var(--d-tx)}
+html body #pg-todo #tw-detail .tm-tl small{font-size:12px;color:var(--d-tx3)}
+html body #pg-todo #tw-detail .tm-bar{height:6px;border-radius:99px;background:var(--d-line);overflow:hidden;margin-top:8px}
+html body #pg-todo #tw-detail .tm-bar i{display:block;height:100%;border-radius:99px;background:#3b82f6}
+html body #pg-todo #tw-detail .tm-time.od b{color:#dc2626}
+html body #pg-todo #tw-detail .tm-time.od .tm-bar i{background:#dc2626}
+html body #pg-todo #tw-detail .tm-time.td b,html body #pg-todo #tw-detail .tm-time.soon b{color:#b45309}
+html body #pg-todo #tw-detail .tm-time.td .tm-bar i,html body #pg-todo #tw-detail .tm-time.soon .tm-bar i{background:#f59e0b}
+html body #pg-todo #tw-detail .tm-time.ok b{color:#047857}
+html body #pg-todo #tw-detail .tm-time.ok .tm-bar i{background:#10b981}
+html.dark body #pg-todo #tw-detail .tm-time.od b{color:#fca5a5}
+html body #pg-todo #tw-detail .tm-railcard{background:transparent!important;border:0!important;border-radius:0!important}
+html body #pg-todo #tw-detail .tm-railcard>:nth-child(3),html body #pg-todo #tw-detail .tm-railcard>:nth-child(4){display:none!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-line,html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary{flex-direction:column!important;flex-wrap:nowrap!important;align-items:stretch!important;gap:5px!important;padding:10px 2px!important;min-height:0!important}
+html body #pg-todo #tw-detail .tm-railcard details.tw-line{padding:0!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-line .k,html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary .k{width:auto!important;min-width:0!important;font-size:11.5px!important;font-weight:500!important;color:var(--d-tx3)!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-line .v,html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary .v{justify-content:flex-start!important;flex-wrap:wrap!important;gap:6px!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-lic,html body #pg-todo #tw-detail .tm-railcard .tw-line>.tw-ic,html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary>.tw-ic{display:none!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-rel{display:none!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-pf{background:var(--d-surf)!important;width:100%;max-width:100%}
+html body #pg-todo #tw-detail .tm-railcard .tw-pf input{flex:1;min-width:0}
+html body #pg-todo #tw-detail .tm-railcard select[data-f=department]{width:100%!important;min-width:0!important;max-width:100%!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-asn{margin:0 0 4px}
+html body #pg-todo #tw-detail .tm-railcard>:nth-child(2){border-bottom:0!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-line,html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary{text-align:start!important;justify-content:flex-start!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-line .k,html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary .k{align-self:stretch!important;text-align:start!important}
+html body #pg-todo #tw-detail .tm-railcard .tw-line .v,html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary .v{align-self:stretch!important;width:100%!important}
+html body #pg-todo #tw-detail .tm-railcard details.tw-line>summary .tw-chv{display:none}
+
+@media (max-width:640px){
+  html body #pg-todo #tw-detail .tm-band{margin:-14px -14px 2px;padding:0 14px 12px}
+  html body #pg-todo #tw-detail .tm-meta,html body #pg-todo #tw-detail .tm-chips,html body #pg-todo #tw-detail .tm-band .tw-sum{padding-inline-start:0}
+  html body #pg-todo #tw-detail .tm-band .tw-d-title textarea[data-f=title]{font-size:18px!important}
+}
+</style>
+
+<!-- ═══════════ AI task analysis panel ═══════════ -->
+<style id="tm-ai-css">
+html body #pg-todo #tw-detail .tm-aibtn{height:28px!important;padding:0 10px!important;border-radius:99px!important;font-size:12px!important;font-weight:600!important;color:#6d28d9!important;background:rgba(124,58,237,.08)!important;border:1px solid rgba(124,58,237,.25)!important;gap:5px}
+html body #pg-todo #tw-detail .tm-aibtn:hover{background:rgba(124,58,237,.14)!important}
+html body #pg-todo #tw-detail .tm-aibtn[disabled]{opacity:.6;cursor:progress}
+html body #pg-todo #tw-detail .tm-ai{border:1px solid rgba(124,58,237,.25);background:rgba(124,58,237,.05);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+html body #pg-todo #tw-detail .tm-ai.err{border-color:rgba(220,38,38,.25);background:rgba(220,38,38,.05)}
+html body #pg-todo #tw-detail .tm-ai-h{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#6d28d9}
+html body #pg-todo #tw-detail .tm-ai.err .tm-ai-h{color:#b91c1c}
+html body #pg-todo #tw-detail .tm-ai-l{font-size:11.5px;font-weight:500;color:var(--d-tx3);margin:6px 0 0}
+html body #pg-todo #tw-detail .tm-ai-goal{width:100%;border:1px solid var(--d-line)!important;border-radius:8px!important;background:var(--d-surf)!important;padding:8px 10px!important;font:inherit;font-size:13.5px!important;line-height:1.7!important;color:var(--d-tx)!important;resize:vertical;min-height:52px}
+html body #pg-todo #tw-detail .tm-ai-items{display:flex;flex-direction:column;gap:5px}
+html body #pg-todo #tw-detail .tm-ai-it{display:flex;align-items:center;gap:8px;background:var(--d-surf);border:1px solid var(--d-line);border-radius:8px;padding:2px 10px}
+html body #pg-todo #tw-detail .tm-ai-it .aic{width:16px;height:16px;flex:none;accent-color:#6d28d9;margin:0}
+html body #pg-todo #tw-detail .tm-ai-it .ait{flex:1;min-width:0;border:0!important;background:transparent!important;box-shadow:none!important;height:34px;padding:0!important;font:inherit;font-size:13.5px!important;color:var(--d-tx)!important;outline:none}
+html body #pg-todo #tw-detail .tm-ai-it:has(.aic:not(:checked)) .ait{color:var(--d-tx3)!important;text-decoration:line-through}
+html body #pg-todo #tw-detail .tm-ai-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+html body #pg-todo #tw-detail .tm-ai-act .tw-btn{height:30px!important;border-radius:8px!important;font-size:12.5px!important}
+html body #pg-todo #tw-detail .tm-ai-sk{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+html body #pg-todo #tw-detail .tm-ai-sk i{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,rgba(124,58,237,.08),rgba(124,58,237,.18),rgba(124,58,237,.08));background-size:200% 100%;animation:tmAiSk 1.2s linear infinite}
+html body #pg-todo #tw-detail .tm-ai-sk i:nth-child(2){width:80%}
+html body #pg-todo #tw-detail .tm-ai-sk i:nth-child(3){width:60%}
+@keyframes tmAiSk{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){html body #pg-todo #tw-detail .tm-ai-sk i{animation:none}}
+html.dark body #pg-todo #tw-detail .tm-ai-h,html.dark body #pg-todo #tw-detail .tm-aibtn{color:#c4b5fd!important}
 </style>
